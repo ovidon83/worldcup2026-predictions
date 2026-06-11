@@ -650,6 +650,24 @@ const _SB=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 const SK={U:'wc26_u',P:'wc26_p',R:'wc26_r',ST:'wc26_s',KO:'wc26_k',C:'wc26_c'};
 
+// ── LIVE SCORE SYNC (football-data.org) ──
+const FDAPI='3785c790244946f2b4a9e0693e7a6bf3';
+const FD_NAMES={'Bosnia-Herzegovina':'Bosnia','Cape Verde Islands':'Cape Verde','Congo DR':'DR Congo','Turkey':'Türkiye','United States':'USA'};
+const FD_LOOKUP=new Map([
+  ['Mexico|South Africa',1],['South Korea|Czechia',2],['Czechia|South Africa',3],['Mexico|South Korea',4],['Czechia|Mexico',5],['South Africa|South Korea',6],
+  ['Canada|Bosnia',7],['Qatar|Switzerland',8],['Switzerland|Bosnia',9],['Canada|Qatar',10],['Switzerland|Canada',11],['Bosnia|Qatar',12],
+  ['Brazil|Morocco',13],['Haiti|Scotland',14],['Scotland|Morocco',15],['Brazil|Haiti',16],['Scotland|Brazil',17],['Morocco|Haiti',18],
+  ['USA|Paraguay',19],['Australia|Türkiye',20],['USA|Australia',21],['Türkiye|Paraguay',22],['Türkiye|USA',23],['Paraguay|Australia',24],
+  ['Germany|Curaçao',25],['Ivory Coast|Ecuador',26],['Germany|Ivory Coast',27],['Ecuador|Curaçao',28],['Ecuador|Germany',29],['Curaçao|Ivory Coast',30],
+  ['Netherlands|Japan',31],['Sweden|Tunisia',32],['Netherlands|Sweden',33],['Tunisia|Japan',34],['Japan|Sweden',35],['Tunisia|Netherlands',36],
+  ['Belgium|Egypt',37],['Iran|New Zealand',38],['Belgium|Iran',39],['New Zealand|Egypt',40],['Egypt|Iran',41],['New Zealand|Belgium',42],
+  ['Spain|Cape Verde',43],['Saudi Arabia|Uruguay',44],['Spain|Saudi Arabia',45],['Uruguay|Cape Verde',46],['Cape Verde|Saudi Arabia',47],['Uruguay|Spain',48],
+  ['France|Senegal',49],['Iraq|Norway',50],['France|Iraq',51],['Norway|Senegal',52],['Norway|France',53],['Senegal|Iraq',54],
+  ['Argentina|Algeria',55],['Austria|Jordan',56],['Argentina|Austria',57],['Jordan|Algeria',58],['Algeria|Austria',59],['Jordan|Argentina',60],
+  ['Portugal|DR Congo',61],['Uzbekistan|Colombia',62],['Portugal|Uzbekistan',63],['Colombia|DR Congo',64],['Colombia|Portugal',65],['DR Congo|Uzbekistan',66],
+  ['England|Croatia',67],['Ghana|Panama',68],['England|Ghana',69],['Panama|Croatia',70],['Panama|England',71],['Croatia|Ghana',72],
+]);
+
 const dbG=async k=>{
   try{
     const{data,error}=await _SB.from('wc26_store').select('value').eq('key',k).maybeSingle();
@@ -979,7 +997,8 @@ async function doLogin(){
   if(!u||!p){S.authErr='Please fill in all fields.';render();return;}
   if(u===ADMIN_USER&&p===ADMIN_PASS){
     S.user={username:'admin',isAdmin:true};S.page='admin';S.anav='stages';
-    S.loginU='';S.loginP='';S.authErr='';toast('Welcome, Admin');render();return;
+    S.loginU='';S.loginP='';S.authErr='';toast('Welcome, Admin');render();
+    syncScoresFromAPI();return;
   }
   const users=await getUsers();
   const found=users.find(x=>x.username.toLowerCase()===u.toLowerCase()&&x.password===p);
@@ -2324,6 +2343,38 @@ const q=s=>document.querySelector(s);
 const qAll=s=>document.querySelectorAll(s);
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+// ── Auto-sync scores from football-data.org (runs in admin's browser) ──
+async function syncScoresFromAPI(){
+  if(!S.user?.isAdmin)return;
+  try{
+    const r=await fetch('https://api.football-data.org/v4/competitions/WC/matches',{headers:{'X-Auth-Token':FDAPI}});
+    if(!r.ok)return;
+    const{matches}=await r.json();
+    const updated={...S.results};
+    let changed=false;
+    for(const m of matches){
+      if(m.status!=='FINISHED'&&m.status!=='IN_PLAY')continue;
+      const sc=m.score?.fullTime;
+      if(sc?.home==null||sc?.away==null)continue;
+      const h=FD_NAMES[m.homeTeam?.name]??m.homeTeam?.name;
+      const a=FD_NAMES[m.awayTeam?.name]??m.awayTeam?.name;
+      const id=FD_LOOKUP.get(`${h}|${a}`);
+      if(!id)continue;
+      if(!updated[id]||updated[id].home!==sc.home||updated[id].away!==sc.away){
+        updated[id]={home:sc.home,away:sc.away};changed=true;
+      }
+    }
+    if(changed){
+      await putRes(updated);
+      S.results=updated;
+      const el=document.getElementById('content');
+      const scrollY=el?el.scrollTop:0;
+      render();
+      requestAnimationFrame(()=>{const c=document.getElementById('content');if(c)c.scrollTop=scrollY;});
+    }
+  }catch(e){console.error('syncScores',e);}
+}
+
 // ════════════════════════════════════════════
 // BOOT
 // ════════════════════════════════════════════
@@ -2336,17 +2387,31 @@ async function boot(){
   setInterval(patchCDs,1000);
   setTimeout(patchCDs,60);
 
-  // Refresh scores every 60s to pick up admin-entered results
+  // Realtime: push score updates to all users the instant they're written
+  _SB.channel('score-sync')
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'wc26_store',filter:'key=eq.wc26_r'},(payload)=>{
+      const nr=payload.new?.value;
+      if(nr&&JSON.stringify(nr)!==JSON.stringify(S.results)){
+        S.results=nr;
+        const el=document.getElementById('content');const scrollY=el?el.scrollTop:0;
+        render();requestAnimationFrame(()=>{const c=document.getElementById('content');if(c)c.scrollTop=scrollY;});
+      }
+    })
+    .subscribe();
+
+  // Fallback poll every 90s (covers cases where Realtime isn't enabled on the project)
   setInterval(async()=>{
+    if(S.user?.isAdmin)return; // admin writes directly, no need to poll
     const res=await getRes();
     if(JSON.stringify(res)!==JSON.stringify(S.results)){
       S.results=res||{};
-      const el=document.getElementById('content');
-      const scrollY=el?el.scrollTop:0;
-      render();
-      requestAnimationFrame(()=>{const c=document.getElementById('content');if(c)c.scrollTop=scrollY;});
+      const el=document.getElementById('content');const scrollY=el?el.scrollTop:0;
+      render();requestAnimationFrame(()=>{const c=document.getElementById('content');if(c)c.scrollTop=scrollY;});
     }
-  },60000);
+  },90000);
+
+  // Admin: auto-fetch live scores from football-data.org every 2 minutes
+  setInterval(syncScoresFromAPI,120000);
 }
 boot();
 </script>
