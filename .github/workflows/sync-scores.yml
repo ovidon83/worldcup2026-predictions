@@ -1,0 +1,115 @@
+name: Sync WC Scores
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes
+  workflow_dispatch:          # manual trigger from GitHub Actions UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch & write scores
+        env:
+          FDAPI: ${{ secrets.FOOTBALL_API_KEY }}
+          SB_URL: ${{ secrets.SUPABASE_URL }}
+          SB_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          python3 - <<'EOF'
+          import os, json, urllib.request
+
+          FDAPI  = os.environ['FDAPI']
+          SB_URL = os.environ['SB_URL']
+          SB_KEY = os.environ['SB_KEY']
+
+          # API name → app name
+          NAMES = {
+            'Bosnia-Herzegovina': 'Bosnia',
+            'Cape Verde Islands': 'Cape Verde',
+            'Congo DR':           'DR Congo',
+            'Turkey':             'Türkiye',
+            'United States':      'USA',
+          }
+
+          LOOKUP = {
+            'Mexico|South Africa':1,'South Korea|Czechia':2,'Czechia|South Africa':3,
+            'Mexico|South Korea':4,'Czechia|Mexico':5,'South Africa|South Korea':6,
+            'Canada|Bosnia':7,'Qatar|Switzerland':8,'Switzerland|Bosnia':9,
+            'Canada|Qatar':10,'Switzerland|Canada':11,'Bosnia|Qatar':12,
+            'Brazil|Morocco':13,'Haiti|Scotland':14,'Scotland|Morocco':15,
+            'Brazil|Haiti':16,'Scotland|Brazil':17,'Morocco|Haiti':18,
+            'USA|Paraguay':19,'Australia|Türkiye':20,'USA|Australia':21,
+            'Türkiye|Paraguay':22,'Türkiye|USA':23,'Paraguay|Australia':24,
+            'Germany|Curaçao':25,'Ivory Coast|Ecuador':26,'Germany|Ivory Coast':27,
+            'Ecuador|Curaçao':28,'Ecuador|Germany':29,'Curaçao|Ivory Coast':30,
+            'Netherlands|Japan':31,'Sweden|Tunisia':32,'Netherlands|Sweden':33,
+            'Tunisia|Japan':34,'Japan|Sweden':35,'Tunisia|Netherlands':36,
+            'Belgium|Egypt':37,'Iran|New Zealand':38,'Belgium|Iran':39,
+            'New Zealand|Egypt':40,'Egypt|Iran':41,'New Zealand|Belgium':42,
+            'Spain|Cape Verde':43,'Saudi Arabia|Uruguay':44,'Spain|Saudi Arabia':45,
+            'Uruguay|Cape Verde':46,'Cape Verde|Saudi Arabia':47,'Uruguay|Spain':48,
+            'France|Senegal':49,'Iraq|Norway':50,'France|Iraq':51,
+            'Norway|Senegal':52,'Norway|France':53,'Senegal|Iraq':54,
+            'Argentina|Algeria':55,'Austria|Jordan':56,'Argentina|Austria':57,
+            'Jordan|Algeria':58,'Algeria|Austria':59,'Jordan|Argentina':60,
+            'Portugal|DR Congo':61,'Uzbekistan|Colombia':62,'Portugal|Uzbekistan':63,
+            'Colombia|DR Congo':64,'Colombia|Portugal':65,'DR Congo|Uzbekistan':66,
+            'England|Croatia':67,'Ghana|Panama':68,'England|Ghana':69,
+            'Panama|Croatia':70,'Panama|England':71,'Croatia|Ghana':72,
+          }
+
+          # --- fetch live scores ---
+          req = urllib.request.Request(
+            'https://api.football-data.org/v4/competitions/WC/matches',
+            headers={'X-Auth-Token': FDAPI}
+          )
+          with urllib.request.urlopen(req) as resp:
+            matches = json.loads(resp.read())['matches']
+
+          # --- load current results from Supabase ---
+          req2 = urllib.request.Request(
+            f"{SB_URL}/rest/v1/wc26_store?key=eq.wc26_r&select=value",
+            headers={'apikey': SB_KEY, 'Authorization': f'Bearer {SB_KEY}'}
+          )
+          with urllib.request.urlopen(req2) as resp:
+            rows = json.loads(resp.read())
+          results = rows[0]['value'] if rows else {}
+
+          # --- apply updates ---
+          changed = False
+          for m in matches:
+            if m['status'] not in ('FINISHED', 'IN_PLAY'):
+              continue
+            sc = (m.get('score') or {}).get('fullTime') or {}
+            if sc.get('home') is None or sc.get('away') is None:
+              continue
+            h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name'])
+            a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name'])
+            mid = LOOKUP.get(f'{h}|{a}')
+            if not mid:
+              continue
+            key = str(mid)
+            if results.get(key) != {'home': sc['home'], 'away': sc['away']}:
+              results[key] = {'home': sc['home'], 'away': sc['away']}
+              changed = True
+
+          if not changed:
+            print('No changes.')
+          else:
+            # --- write back to Supabase ---
+            body = json.dumps({'key': 'wc26_r', 'value': results,
+                               'updated_at': __import__('datetime').datetime.utcnow().isoformat()+'Z'})
+            req3 = urllib.request.Request(
+              f"{SB_URL}/rest/v1/wc26_store",
+              data=body.encode(),
+              headers={
+                'apikey': SB_KEY,
+                'Authorization': f'Bearer {SB_KEY}',
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates',
+              },
+              method='POST'
+            )
+            with urllib.request.urlopen(req3) as resp:
+              print(f'Written {len(results)} results. Status: {resp.status}')
+          EOF
