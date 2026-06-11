@@ -58,9 +58,13 @@ jobs:
             'Panama|Croatia':70,'Panama|England':71,'Croatia|Ghana':72,
           }
 
-          # --- fetch live scores ---
+          # --- fetch live scores (date window: yesterday → tomorrow) ---
+          from datetime import datetime, timedelta, timezone
+          today = datetime.now(timezone.utc).date()
+          d_from = (today - timedelta(days=1)).isoformat()
+          d_to   = (today + timedelta(days=1)).isoformat()
           req = urllib.request.Request(
-            'https://api.football-data.org/v4/competitions/WC/matches',
+            f'https://api.football-data.org/v4/competitions/WC/matches?dateFrom={d_from}&dateTo={d_to}',
             headers={'X-Auth-Token': FDAPI}
           )
           with urllib.request.urlopen(req) as resp:
