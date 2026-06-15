@@ -1307,7 +1307,7 @@ function buildDaySection(date,matches,isKO=false){
             </div>
           </div>
         </div>
-        <div style="text-align:center;font-size:0.64rem;color:var(--txt3);margin-top:6px">${m.group||m.round||''}${myPred?`<span style="margin-left:8px;font-weight:700;color:${myPredColor}">▸ ${myPred.home}–${myPred.away}</span>`:''}</div>
+        <div style="text-align:center;font-size:0.64rem;color:var(--txt3);margin-top:6px">${m.group||m.round||''}${myPred?`<div style="margin-top:3px;font-size:0.63rem;font-weight:700;color:${myPredColor}">My pick: ${myPred.home}–${myPred.away}</div>`:''}</div>
       </div>`;
   });
   html+=`</div>`;
