@@ -1307,7 +1307,7 @@ function buildDaySection(date,matches,isKO=false){
             </div>
           </div>
         </div>
-        <div style="text-align:center;font-size:0.64rem;color:var(--txt3);margin-top:6px">${m.group||m.round||''}${myPred?`<div style="margin-top:3px;font-size:0.63rem;font-weight:700;color:${myPredColor}">My pick: ${myPred.home}–${myPred.away}</div>`:''}${(r&&(r.status==='FINISHED'||(!r.status&&done)))?`<a href="https://www.youtube.com/results?search_query=${encodeURIComponent((m.homeN||m.slotHome||'')+' '+(m.awayN||m.slotAway||'')+' World Cup 2026 highlights')}" target="_blank" rel="noopener" style="display:inline-block;margin-top:5px;font-size:0.63rem;font-weight:700;color:#ff0000;text-decoration:none;opacity:0.85">▶ Highlights</a>`:''}</div>
+        <div style="text-align:center;font-size:0.64rem;color:var(--txt3);margin-top:6px">${m.group||m.round||''}${myPred?`<div style="margin-top:3px;font-size:0.63rem;font-weight:700;color:${myPredColor}">My pick: ${myPred.home}–${myPred.away}</div>`:''}${(r&&(r.status==='FINISHED'||(!r.status&&done)))?`<div style="margin-top:3px"><a href="https://www.youtube.com/results?search_query=${encodeURIComponent((m.homeN||m.slotHome||'')+' '+(m.awayN||m.slotAway||'')+' World Cup 2026 highlights')}" target="_blank" rel="noopener" style="font-size:0.63rem;font-weight:700;color:#ff0000;text-decoration:none;opacity:0.85">▶ Highlights</a></div>`:''}</div>
       </div>`;
   });
   html+=`</div>`;
