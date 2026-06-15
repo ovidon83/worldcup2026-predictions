@@ -638,7 +638,7 @@ let S={
   unlockStage:null, unlockDeadline:'',
   confirmDelete:false,
   homeTab:'overview', bracketRound:'r16', expandedGroups:{},
-  matchStage:'group', matchGroup:'all',
+  matchStage:'group', matchGroup:'today',
 };
 
 // ════════════════════════════════════════════
@@ -701,6 +701,7 @@ const putChampPicks=c=>dbS(SK.C,c);
 function allM(){const ko=[];['r32','r16','qf','sf','final'].forEach(st=>(S.koMatches[st]||[]).forEach(m=>ko.push(m)));return[...GM,...ko];}
 
 function dlPassed(stage){
+  if(stage==='group') return new Date()>=new Date(DEADLINE);
   const c=S.stageConfig[stage];
   if(!c||!c.open||!c.deadline) return false;
   return new Date(c.deadline)<new Date();
@@ -708,7 +709,7 @@ function dlPassed(stage){
 function stageOpen(s){return!!(S.stageConfig[s]&&S.stageConfig[s].open&&!dlPassed(s));}
 
 function calcPts(pred,actual,stage){
-  if(!actual||pred.home===undefined||pred.home==='') return 0;
+  if(!actual||actual.status==='IN_PLAY'||pred.home===undefined||pred.home==='') return 0;
   const pts=(STAGE_INFO[stage]||STAGE_INFO.group).pts;
   const ph=+pred.home,pa=+pred.away,ah=+actual.home,aa=+actual.away;
   if(ph===ah&&pa===aa) return pts.exact;
@@ -1208,14 +1209,29 @@ function buildMatchSchedule(){
   </div>`;
 
   if(ms==='group'){
+    // Today date string in "Jun 14" format matching GM entries
+    const _td=new Date();
+    const _mons=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const todayStr=_mons[_td.getMonth()]+' '+_td.getDate();
+    const hasToday=GM.some(m=>m.date===todayStr);
+
     // Group filter
     const groups=[...new Set(GM.map(m=>m.group))];
-    const activeGroup=S.matchGroup||'all';
+    const activeGroup=S.matchGroup||'today';
     html+=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:16px">
+      ${hasToday?`<button class="btn ${activeGroup==='today'?'btn-gold':'btn-ghost'} btn-sm" data-mgroup="today">Today</button>`:''}
       <button class="btn ${activeGroup==='all'?'btn-gold':'btn-ghost'} btn-sm" data-mgroup="all">All</button>
       ${groups.map(g=>`<button class="btn ${activeGroup===g?'btn-gold':'btn-ghost'} btn-sm" data-mgroup="${g}">${g.replace('Group ','Grp ')}</button>`).join('')}
     </div>`;
-    const filtered=activeGroup==='all'?GM:GM.filter(m=>m.group===activeGroup);
+    let filtered;
+    if(activeGroup==='today'){
+      filtered=hasToday?GM.filter(m=>m.date===todayStr):GM;
+    } else {
+      filtered=activeGroup==='all'?GM:GM.filter(m=>m.group===activeGroup);
+    }
+    if(activeGroup==='today'&&!filtered.length){
+      html+=`<div style="background:var(--s1);border:1px solid var(--line);border-radius:var(--r);padding:32px;text-align:center;color:var(--txt3);font-size:0.85rem">No group stage matches today.</div>`;
+    } else {
     // Group by date
     const byDate={};
     filtered.forEach(m=>{if(!byDate[m.date])byDate[m.date]=[];byDate[m.date].push(m);});
@@ -1223,6 +1239,7 @@ function buildMatchSchedule(){
     Object.entries(byDate).sort(([a],[b])=>toD(a)-toD(b)).forEach(([date,matches])=>{
       html+=buildDaySection(date,matches);
     });
+    }
   } else {
     const isUnlocked=S.stageConfig[ms]&&S.stageConfig[ms].open;
     const matches=isUnlocked?(S.koMatches[ms]||KOT[ms]||[]):(KOT[ms]||[]);
@@ -1257,8 +1274,8 @@ function buildDaySection(date,matches,isKO=false){
     const r=S.results[m.id];
     const now2=new Date();
     const mdt=m.date?new Date('2026-'+m.date.replace('Jun ','06-').replace('Jul ','07-')+'T'+(m.time||'20:00')+':00'):null;
-    const live=mdt&&now2>mdt&&(now2-mdt)<7200000;
-    const done=mdt&&now2>mdt&&(now2-mdt)>=7200000;
+    const live=mdt&&now2>mdt&&(now2-mdt)<10800000;
+    const done=mdt&&now2>mdt&&(now2-mdt)>=10800000;
     const homeWin=r&&r.home>r.away,awayWin=r&&r.away>r.home;
     const isTBD=!m.homeN||m.homeN==='TBD';
     html+=`
@@ -1273,7 +1290,7 @@ function buildDaySection(date,matches,isKO=false){
           </div>
           <div style="text-align:center;min-width:80px">
             ${r?`<div style="font-family:'Oswald',sans-serif;font-size:1.4rem;font-weight:700;color:var(--navy);letter-spacing:1px">${r.home} – ${r.away}</div>
-                 <div style="font-size:0.58rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${live?'var(--red2)':done?'var(--green2)':'var(--txt3)'};margin-top:2px">${live?'● LIVE':done?'FT':fmt12h(m.time)}</div>`
+                 <div style="font-size:0.58rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${(r.status==='IN_PLAY'||(!r.status&&live))?'var(--red2)':(r.status==='FINISHED'||(!r.status&&done))?'var(--green2)':'var(--txt3)'};margin-top:2px">${(r.status==='IN_PLAY'||(!r.status&&live))?'● LIVE':(r.status==='FINISHED'||(!r.status&&done))?'FT':fmt12h(m.time)}</div>`
             :`<div style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:600;color:var(--txt3)${live?';color:var(--red2)':''}">${live?'<span class="live-dot" style="width:8px;height:8px;vertical-align:middle;margin-right:4px"></span>':fmt12h(m.time)}</div>
                ${live?'<div style="font-size:0.58rem;font-weight:700;color:var(--red2);margin-top:2px;letter-spacing:1px">LIVE</div>':''}`}
           </div>
@@ -1353,14 +1370,22 @@ function buildMatchDayGames(games){
   return games.map(m=>{
     const r=S.results[m.id];
     const now2=new Date();const _md=m.date?m.date.replace('Jun ','06-').replace('Jul ','07-'):'06-11';const mdt=new Date('2026-'+_md+'T'+(m.time||'20:00')+':00');
-    const live=now2>mdt&&(now2-mdt)<7200000,done=now2>mdt&&(now2-mdt)>=7200000;
+    const live=now2>mdt&&(now2-mdt)<10800000,done=now2>mdt&&(now2-mdt)>=10800000;
     const homeWin=r&&r.home>r.away,awayWin=r&&r.away>r.home;
+    const pred=S.userPreds&&S.userPreds[m.id];
+    let predColor='var(--txt3)';
+    if(pred&&r&&r.status!=='IN_PLAY'){
+      if(pred.home===r.home&&pred.away===r.away) predColor='var(--green)';
+      else{const pW=pred.home>pred.away?'h':pred.home<pred.away?'a':'d',aW=r.home>r.away?'h':r.home<r.away?'a':'d';predColor=pW===aW?'var(--gold)':'var(--red2)';}
+    }
+    const isLive=r?.status==='IN_PLAY'||((!r||!r.status)&&live);
+    const isFt=r?.status==='FINISHED'||((!r||!r.status)&&done);
     return `<div class="gw-row">
-      <div class="gw-status">${live?'<span class="gw-pill live"><span class="live-dot" style="margin-right:3px;width:5px;height:5px"></span>Live</span>':done?'<span class="gw-pill ft">FT</span>':`<span class="gw-pill soon">${fmt12h(m.time)}</span>`}</div>
+      <div class="gw-status">${isLive?'<span class="gw-pill live"><span class="live-dot" style="margin-right:3px;width:5px;height:5px"></span>Live</span>':isFt?'<span class="gw-pill ft">FT</span>':`<span class="gw-pill soon">${fmt12h(m.time)}</span>`}</div>
       <div class="gw-team-l"><span class="gw-name" style="${homeWin?'color:var(--navy);font-weight:700':''}">${m.homeN}</span><span class="gw-flag">${m.home}</span></div>
-      <div class="gw-score ${live?'live':''}" style="${done&&r?'color:var(--navy);font-weight:700;background:var(--s2)':''}">${r?`${r.home}–${r.away}`:live?'<span class="live-dot"></span>':'–'}</div>
+      <div class="gw-score ${isLive?'live':''}" style="${isFt&&r?'color:var(--navy);font-weight:700;background:var(--s2)':''}">${r?`${r.home}–${r.away}`:isLive?'<span class="live-dot"></span>':'–'}</div>
       <div class="gw-team-r"><span class="gw-flag">${m.away}</span><span class="gw-name" style="${awayWin?'color:var(--navy);font-weight:700':''}">${m.awayN}</span></div>
-      <div></div>
+      <div style="text-align:center;min-width:0">${pred?`<div style="font-size:0.55rem;font-weight:700;letter-spacing:0.4px;color:var(--txt3);text-transform:uppercase;line-height:1;margin-bottom:2px">pick</div><div style="font-family:'Oswald',sans-serif;font-size:0.82rem;font-weight:700;color:${predColor}">${pred.home}–${pred.away}</div>`:'<div style="font-size:0.7rem;color:var(--line2)">–</div>'}</div>
     </div>`;
   }).join('');
 }
@@ -2150,8 +2175,8 @@ function buildBracketView(){
     const r=S.results[m.id];
     const now2=new Date();
     const mdt=m.date?new Date('2026-'+m.date.replace('Jun ','06-').replace('Jul ','07-')+'T'+(m.time||'20:00')+':00'):null;
-    const live=mdt&&now2>mdt&&(now2-mdt)<7200000;
-    const done=mdt&&now2>mdt&&(now2-mdt)>=7200000;
+    const live=mdt&&now2>mdt&&(now2-mdt)<10800000;
+    const done=mdt&&now2>mdt&&(now2-mdt)>=10800000;
     const isTBD=m.homeN==='TBD'||!m.homeN;
     const homeWin=r&&r.home>r.away,awayWin=r&&r.away>r.home;
 
@@ -2270,7 +2295,7 @@ function attachAll(){
   });
 
   // home tabs
-  qAll('[data-hometab]').forEach(el=>el.addEventListener('click',()=>{S.homeTab=el.dataset.hometab;render();}));
+  qAll('[data-hometab]').forEach(el=>el.addEventListener('click',()=>{S.homeTab=el.dataset.hometab;if(el.dataset.hometab==='matches')S.matchGroup='today';render();}));
   // champion pick save
   const champBtn=q('#save-champ-btn');
   if(champBtn){

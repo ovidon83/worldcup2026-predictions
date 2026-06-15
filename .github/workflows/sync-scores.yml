@@ -82,10 +82,8 @@ jobs:
           # --- apply updates ---
           changed = False
           for m in matches:
-            if m['status'] not in ('FINISHED', 'IN_PLAY'):
-              continue
-            sc = (m.get('score') or {}).get('fullTime') or {}
-            if sc.get('home') is None or sc.get('away') is None:
+            status = m['status']
+            if status not in ('FINISHED', 'IN_PLAY'):
               continue
             h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name'])
             a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name'])
@@ -93,8 +91,24 @@ jobs:
             if not mid:
               continue
             key = str(mid)
-            if results.get(key) != {'home': sc['home'], 'away': sc['away']}:
-              results[key] = {'home': sc['home'], 'away': sc['away']}
+
+            if status == 'FINISHED':
+              sc = (m.get('score') or {}).get('fullTime') or {}
+              if sc.get('home') is None or sc.get('away') is None:
+                continue
+              entry = {'home': sc['home'], 'away': sc['away'], 'status': 'FINISHED'}
+            else:  # IN_PLAY — use halfTime as best available on free tier
+              ht = (m.get('score') or {}).get('halfTime') or {}
+              home_sc = ht.get('home') if ht.get('home') is not None else 0
+              away_sc = ht.get('away') if ht.get('away') is not None else 0
+              entry = {'home': home_sc, 'away': away_sc, 'status': 'IN_PLAY'}
+              # Don't overwrite a FINISHED result with an IN_PLAY one
+              cur = results.get(key, {})
+              if cur.get('status') == 'FINISHED':
+                continue
+
+            if results.get(key) != entry:
+              results[key] = entry
               changed = True
 
           if not changed:
