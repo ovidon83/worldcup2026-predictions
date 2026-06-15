@@ -1277,6 +1277,12 @@ function buildDaySection(date,matches,isKO=false){
     const live=mdt&&now2>mdt&&(now2-mdt)<10800000;
     const done=mdt&&now2>mdt&&(now2-mdt)>=10800000;
     const homeWin=r&&r.home>r.away,awayWin=r&&r.away>r.home;
+    const myPred=S.user&&S.userPreds&&S.userPreds[m.id];
+    let myPredColor='var(--txt3)';
+    if(myPred&&r&&r.status!=='IN_PLAY'){
+      if(myPred.home===r.home&&myPred.away===r.away)myPredColor='var(--green)';
+      else{const pW=myPred.home>myPred.away?'h':myPred.home<myPred.away?'a':'d',aW=r.home>r.away?'h':r.home<r.away?'a':'d';myPredColor=pW===aW?'var(--gold)':'var(--red2)';}
+    }
     const isTBD=!m.homeN||m.homeN==='TBD';
     html+=`
       ${i>0?'<div style="height:1px;background:var(--line)"></div>':''}
@@ -1301,7 +1307,7 @@ function buildDaySection(date,matches,isKO=false){
             </div>
           </div>
         </div>
-        <div style="text-align:center;font-size:0.64rem;color:var(--txt3);margin-top:6px">${m.group||m.round||''}</div>
+        <div style="text-align:center;font-size:0.64rem;color:var(--txt3);margin-top:6px">${m.group||m.round||''}${myPred?`<span style="margin-left:8px;font-weight:700;color:${myPredColor}">▸ ${myPred.home}–${myPred.away}</span>`:''}</div>
       </div>`;
   });
   html+=`</div>`;

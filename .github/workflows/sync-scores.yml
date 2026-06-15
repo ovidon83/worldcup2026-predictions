@@ -27,6 +27,7 @@ jobs:
             'Bosnia-Herzegovina': 'Bosnia',
             'Cape Verde Islands': 'Cape Verde',
             'Congo DR':           'DR Congo',
+            "Côte d'Ivoire":      'Ivory Coast',
             'Turkey':             'Türkiye',
             'United States':      'USA',
           }
