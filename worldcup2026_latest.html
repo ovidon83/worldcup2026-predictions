@@ -142,6 +142,13 @@ body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(-
 .chat-input-row{padding:12px 14px;border-top:1px solid var(--line);display:flex;gap:8px;background:var(--s1);flex-shrink:0}
 .chat-input{flex:1;padding:9px 12px;border:1px solid var(--line2);border-radius:var(--r2);background:var(--s2);color:var(--txt);font-family:'Inter',sans-serif;font-size:0.85rem;outline:none}
 .chat-input:focus{border-color:var(--gold)}
+.chat-notif{position:fixed;top:14px;right:14px;max-width:260px;background:var(--s2);border:1px solid var(--line2);border-radius:var(--r);padding:11px 12px;display:flex;align-items:flex-start;gap:9px;z-index:9998;cursor:pointer;animation:tin .25s ease;box-shadow:0 8px 32px rgba(0,0,0,0.55)}
+.chat-notif-body{flex:1;min-width:0}
+.chat-notif-name{font-size:0.72rem;font-weight:700;margin-bottom:1px}
+.chat-notif-msg{font-size:0.78rem;color:var(--txt2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-notif-x{background:none;border:none;color:var(--txt3);font-size:1.1rem;cursor:pointer;padding:0 0 0 4px;line-height:1;flex-shrink:0;margin-top:-1px}
+.chat-badge{position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;font-size:0.52rem;font-weight:800;border-radius:999px;min-width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;pointer-events:none}
+.bn-badge{position:absolute;top:2px;right:calc(50% - 18px);background:#ef4444;color:#fff;font-size:0.52rem;font-weight:800;border-radius:999px;min-width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;pointer-events:none}
 
 /* ── PARTICIPANTS ── */
 .pax-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
@@ -633,7 +640,7 @@ let S={
   authErr:'', loginU:'', loginP:'', regU:'', regP:'', regC:'',
   tempScores:{}, userPreds:{}, results:{}, resultInputs:{},
   saving:false, toastMsg:null, toastErr:false, toastTimer:null,
-  chatMsgs:[], chatInput:'', chatSending:false,
+  chatMsgs:[], chatInput:'', chatSending:false, chatUnread:0, chatNotif:null, chatNotifTimer:null,
   stageConfig:{
     group:{open:true, deadline:'2026-06-09T00:00:00'},
     r32:{open:false,deadline:null}, r16:{open:false,deadline:null},
@@ -1018,6 +1025,7 @@ async function doLogin(){
     const cp=await getChampPicks();S.championPick=cp[found.username]||'';
     S.chatMsgs=await getChat();
     S.page='app';S.nav='home';S.loginU='';S.loginP='';S.authErr='';
+    try{localStorage.setItem('wc26_auth',JSON.stringify({username:found.username}));}catch(e){}
     toast('Welcome back, '+found.username+'!');
   }else{S.authErr='Incorrect username or password.';}
   render();
@@ -1038,9 +1046,10 @@ async function doRegister(){
   S.user={username:u,isAdmin:false};S.userPreds={};
   S.page='app';S.nav='picks';S.pstage='group';
   S.regU='';S.regP='';S.regC='';S.authErr='';
+  try{localStorage.setItem('wc26_auth',JSON.stringify({username:u}));}catch(e){}
   toast('Account created! Make your predictions 🎉');render();
 }
-function doLogout(){S.user=null;S.userPreds={};S.tempScores={};S.page='public';S.nav='home';S.confirmDelete=false;render();}
+function doLogout(){try{localStorage.removeItem('wc26_auth');}catch(e){}S.user=null;S.userPreds={};S.tempScores={};S.chatUnread=0;S.chatNotif=null;S.page='public';S.nav='home';S.confirmDelete=false;document.title='World Cup 2026 · Predictions';render();}
 
 async function doDeleteAccount(){
   const username=S.user.username;
@@ -1053,6 +1062,7 @@ async function doDeleteAccount(){
   delete preds[username];
   await putPreds(preds);
   // Clear state and go home
+  try{localStorage.removeItem('wc26_auth');}catch(e){}
   S.user=null;S.userPreds={};S.tempScores={};S.confirmDelete=false;S.page='public';S.nav='home';
   toast('Account deleted.');render();
 }
@@ -1128,10 +1138,23 @@ function render(){document.getElementById('root').innerHTML=buildApp();attachAll
 function buildApp(){
   if(S.page==='auth') return buildAuthPage()+toastHTML();
   if(S.page==='admin') return buildAdminApp()+toastHTML();
-  if(S.page==='app') return buildUserApp()+toastHTML();
+  if(S.page==='app') return buildUserApp()+toastHTML()+chatNotifHTML();
   return buildPublicApp()+toastHTML();
 }
 function toastHTML(){return S.toastMsg?`<div class="toast ${S.toastErr?'err':'ok'}">${S.toastMsg}</div>`:'';}
+function chatNotifHTML(){
+  if(!S.chatNotif)return'';
+  const{u,t}=S.chatNotif;
+  const preview=t.length>55?t.slice(0,55)+'…':t;
+  return `<div class="chat-notif" id="chat-notif-popup">
+    <span style="font-size:1.1rem;flex-shrink:0">💬</span>
+    <div class="chat-notif-body">
+      <div class="chat-notif-name" style="color:${userColor(u)}">${esc(u)}</div>
+      <div class="chat-notif-msg">${esc(preview)}</div>
+    </div>
+    <button class="chat-notif-x" id="chat-notif-close" title="Dismiss">×</button>
+  </div>`;
+}
 
 // ─── PUBLIC ───
 function buildPublicApp(){
@@ -1472,7 +1495,7 @@ function buildUserApp(){
         ${sbi('home','🏠','Home',S.nav==='home')}
         ${sbi('lb','🏅','Leaderboard',S.nav==='lb')}
         ${sbi('picks','⚽','My Picks',S.nav==='picks')}
-        ${sbi('chat','💬','Chat',S.nav==='chat')}
+        ${sbi('chat','💬','Chat',S.nav==='chat',S.nav!=='chat'?S.chatUnread:0)}
         ${sbi('scoring','📊','Scoring',S.nav==='scoring')}
       </div>
       <div class="sb-foot">
@@ -1506,7 +1529,7 @@ function buildUserApp(){
     ${bnb('home','🏠','Home',S.nav==='home')}
     ${bnb('lb','🏅','Board',S.nav==='lb')}
     ${bnb('picks','⚽','Picks',S.nav==='picks')}
-    ${bnb('chat','💬','Chat',S.nav==='chat')}
+    ${bnb('chat','💬','Chat',S.nav==='chat',S.nav!=='chat'?S.chatUnread:0)}
     ${bnb('scoring','📊','Pts',S.nav==='scoring')}
   </div></div>`;
 }
@@ -1582,14 +1605,14 @@ function mobileTopBar(isAdmin=false){
   </div>`;
 }
 
-function sbi(id,icon,label,on){
-  return `<button class="sb-item ${on?'on':''}" data-nav="${id}"><span>${icon}</span>${label}${on?'<span class="sb-dot"></span>':''}</button>`;
+function sbi(id,icon,label,on,badge=0){
+  return `<button class="sb-item ${on?'on':''}" data-nav="${id}" style="position:relative"><span>${icon}</span>${label}${on?'<span class="sb-dot"></span>':''}${badge?`<span class="chat-badge">${badge>9?'9+':badge}</span>`:''}</button>`;
 }
 function sbiA(id,icon,label,on){
   return `<button class="sb-item ${on?'on':''}" data-anav="${id}"><span>${icon}</span>${label}${on?'<span class="sb-dot"></span>':''}</button>`;
 }
-function bnb(id,icon,label,on){
-  return `<button class="bn-btn ${on?'on':''}" data-nav="${id}"><span class="bn-ic">${icon}</span>${label}</button>`;
+function bnb(id,icon,label,on,badge=0){
+  return `<button class="bn-btn ${on?'on':''}" data-nav="${id}" style="position:relative"><span class="bn-ic">${icon}</span>${label}${badge?`<span class="bn-badge">${badge>9?'9+':badge}</span>`:''}</button>`;
 }
 function bnbA(id,icon,label,on){
   return `<button class="bn-btn ${on?'on':''}" data-anav="${id}"><span class="bn-ic">${icon}</span>${label}</button>`;
@@ -2295,7 +2318,12 @@ function attachAll(){
     else{S.page='public';S.nav='home';}
     render();
   });
-  qAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>{S.nav=el.dataset.nav;render();}));
+  qAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>{
+    S.nav=el.dataset.nav;
+    if(S.nav==='chat'){S.chatUnread=0;S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);document.title='World Cup 2026 · Predictions';}
+    render();
+    if(S.nav==='chat')requestAnimationFrame(()=>{const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;});
+  }));
   qAll('[data-anav]').forEach(el=>el.addEventListener('click',()=>{S.anav=el.dataset.anav;render();}));
   qAll('[data-rstage]').forEach(el=>el.addEventListener('click',()=>{S.rstage=el.dataset.rstage;render();}));
   qAll('[data-pstage]').forEach(el=>el.addEventListener('click',()=>{S.pstage=el.dataset.pstage;render();}));
@@ -2303,6 +2331,8 @@ function attachAll(){
   qAll('[data-logout]').forEach(el=>el.addEventListener('click',doLogout));
   q('#chat-send-btn')?.addEventListener('click',sendChat);
   q('#chat-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
+  q('#chat-notif-popup')?.addEventListener('click',()=>{S.nav='chat';S.chatUnread=0;S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);document.title='World Cup 2026 · Predictions';render();requestAnimationFrame(()=>{const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;});});
+  q('#chat-notif-close')?.addEventListener('click',e=>{e.stopPropagation();S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);render();});
   requestAnimationFrame(()=>{if(S.nav==='chat'){const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;}});
   q('#delete-account-btn')?.addEventListener('click',()=>{S.confirmDelete=true;render();});
   q('#delete-no-btn')?.addEventListener('click',()=>{S.confirmDelete=false;render();});
@@ -2474,6 +2504,27 @@ async function boot(){
   S.results=res||{};
   if(stages)S.stageConfig=stages;
   if(ko)S.koMatches=ko;
+
+  // Auto-login from saved session
+  try{
+    const saved=localStorage.getItem('wc26_auth');
+    if(saved){
+      const{username}=JSON.parse(saved);
+      if(username){
+        const users=await getUsers();
+        const found=(users||[]).find(u=>u.username===username);
+        if(found){
+          S.user={username:found.username,isAdmin:false};
+          const[all,cp,chat]=await Promise.all([getPreds(),getChampPicks(),getChat()]);
+          S.userPreds=all[found.username]||{};
+          S.championPick=cp[found.username]||'';
+          S.chatMsgs=chat;
+          S.page='app';S.nav='home';
+        }else{localStorage.removeItem('wc26_auth');}
+      }
+    }
+  }catch(e){try{localStorage.removeItem('wc26_auth');}catch(e2){}}
+
   render();
   setInterval(patchCDs,1000);
   setTimeout(patchCDs,60);
@@ -2495,8 +2546,23 @@ async function boot(){
     .on('postgres_changes',{event:'UPDATE',schema:'public',table:'wc26_store',filter:'key=eq.wc26_chat'},(payload)=>{
       const msgs=payload.new?.value;
       if(msgs&&JSON.stringify(msgs)!==JSON.stringify(S.chatMsgs)){
+        const prev=S.chatMsgs||[];
+        const newOnes=msgs.filter(m=>!prev.some(p=>p.ts===m.ts));
         S.chatMsgs=msgs;
-        if(S.nav==='chat'){render();requestAnimationFrame(()=>{const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;});}
+        if(S.nav==='chat'){
+          render();requestAnimationFrame(()=>{const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;});
+        } else {
+          const fromOthers=newOnes.filter(m=>m.u!==S.user?.username);
+          if(fromOthers.length&&S.user&&!S.user.isAdmin){
+            S.chatUnread+=fromOthers.length;
+            const last=fromOthers[fromOthers.length-1];
+            S.chatNotif={u:last.u,t:last.t};
+            if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);
+            S.chatNotifTimer=setTimeout(()=>{S.chatNotif=null;render();},5000);
+            document.title=`(${S.chatUnread}) WC2026`;
+          }
+          render();
+        }
       }
     })
     .subscribe();
