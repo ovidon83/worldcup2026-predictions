@@ -942,9 +942,11 @@ function fillStageMatches(tmplList){
 }
 
 // Main check — called after every result save
+// R32 is excluded from auto-unlock: 3rd-place slot assignment requires
+// the official FIFA bracket announcement after group stage ends.
+// Admin manually unlocks R32 via the admin panel after bracket is confirmed.
 async function checkAutoAdvance(){
   const stageSeq=[
-    {from:'group',to:'r32',tmpl:KOT.r32,check:()=>GM.every(m=>S.results[m.id]!==undefined)},
     {from:'r32',  to:'r16',tmpl:KOT.r16},
     {from:'r16',  to:'qf', tmpl:KOT.qf},
     {from:'qf',   to:'sf', tmpl:KOT.sf},
