@@ -866,11 +866,22 @@ function advancementBreakdown(userPreds){
 
 // Resolve a slot string to {name, flag} or null
 function resolveSlot(slot){
-  // Group-derived: "1A" = 1st in Group A, "2B" = 2nd in Group B
-  if(/^[12][A-F]$/.test(slot)){
-    const pos=parseInt(slot[0])-1;
-    const standings=getGroupStandings('Group '+slot[1]);
-    const t=standings[pos];
+  // Group winner: "W A" through "W L"
+  if(/^W [A-L]$/.test(slot)){
+    const t=getGroupStandings('Group '+slot[2])[0];
+    return t?{name:t.name,flag:t.flag}:null;
+  }
+  // Group runner-up: "Ru A" through "Ru L"
+  if(/^Ru [A-L]$/.test(slot)){
+    const t=getGroupStandings('Group '+slot[3])[1];
+    return t?{name:t.name,flag:t.flag}:null;
+  }
+  // Best 3rd-place teams: "3rd-1" through "3rd-8"
+  if(/^3rd-\d+$/.test(slot)){
+    const n=parseInt(slot.split('-')[1])-1;
+    const thirds=GROUPS.map(g=>getGroupStandings(g)[2]).filter(Boolean)
+      .sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf);
+    const t=thirds[n];
     return t?{name:t.name,flag:t.flag}:null;
   }
   // Winner of a previous KO match: "W101"
@@ -1091,6 +1102,7 @@ function autoFill(){
   render();
 }
 async function saveP(){
+  if(dlPassed(S.pstage))return;
   S.saving=true;render();
   Object.entries(S.tempScores).forEach(([id,sc])=>{
     if(sc.home!==''&&sc.away!=='')S.userPreds[+id]={home:+sc.home,away:+sc.away};
