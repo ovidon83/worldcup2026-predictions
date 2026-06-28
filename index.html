@@ -1416,7 +1416,26 @@ function buildMatchDayTab(games,started,fg){
   </div>`;
 }
 
-function buildHomeContent(){return buildPublicTabs();}
+function buildKONotif(){
+  const openStages=['r32','r16','qf','sf','final'].filter(s=>S.stageConfig[s]?.open&&!dlPassed(s));
+  if(!openStages.length)return'';
+  const s=openStages[0];
+  const info={r32:{icon:'⚔️',label:'Round of 32'},r16:{icon:'🔥',label:'Round of 16'},qf:{icon:'💥',label:'Quarter Finals'},sf:{icon:'⭐',label:'Semi Finals'},final:{icon:'🏆',label:'Final'}};
+  const dl=S.stageConfig[s].deadline;
+  const dlStr=dl?new Date(dl).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+  return`<div style="background:linear-gradient(135deg,var(--gold3),rgba(201,151,58,.08));border:2px solid var(--gold);border-radius:var(--r);padding:14px 16px;margin:0 0 12px;cursor:pointer;display:flex;align-items:center;gap:10px" id="ko-notif-banner">
+    <span style="font-size:1.4rem">${info[s].icon}</span>
+    <div style="flex:1">
+      <div style="font-weight:700;color:var(--gold2);font-size:0.92rem">${info[s].label} predictions are OPEN!</div>
+      ${dlStr?`<div style="font-size:0.75rem;color:var(--txt2);margin-top:2px">Deadline: ${dlStr}</div>`:''}
+    </div>
+    <span style="font-size:0.8rem;font-weight:700;color:var(--gold);white-space:nowrap">Make picks →</span>
+  </div>`;
+}
+function buildHomeContent(){
+  const notif=S.user?buildKONotif():'';
+  return notif+buildPublicTabs();
+}
 
 function buildMatchDayGames(games){
   if(!games.length) return `<div class="gw-empty">No matches scheduled for this day</div>`;
@@ -2347,6 +2366,7 @@ function attachAll(){
   q('#chat-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
   q('#chat-notif-popup')?.addEventListener('click',()=>{S.nav='chat';S.chatUnread=0;S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);document.title='World Cup 2026 · Predictions';render();requestAnimationFrame(()=>{const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;});});
   q('#chat-notif-close')?.addEventListener('click',e=>{e.stopPropagation();S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);render();});
+  q('#ko-notif-banner')?.addEventListener('click',()=>{S.nav='picks';S.pstage='r32';render();});
   requestAnimationFrame(()=>{if(S.nav==='chat'){const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;}});
   q('#delete-account-btn')?.addEventListener('click',()=>{S.confirmDelete=true;render();});
   q('#delete-no-btn')?.addEventListener('click',()=>{S.confirmDelete=false;render();});
