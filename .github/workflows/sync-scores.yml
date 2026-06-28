@@ -32,6 +32,7 @@ jobs:
             'United States':      'USA',
           }
 
+          # Group stage lookup (hardcoded — stable team assignments)
           LOOKUP = {
             'Mexico|South Africa':1,'South Korea|Czechia':2,'Czechia|South Africa':3,
             'Mexico|South Korea':4,'Czechia|Mexico':5,'South Africa|South Korea':6,
@@ -58,6 +59,32 @@ jobs:
             'England|Croatia':67,'Ghana|Panama':68,'England|Ghana':69,
             'Panama|Croatia':70,'Panama|England':71,'Croatia|Ghana':72,
           }
+
+          # Dynamic KO lookup from wc26_k (matches resolve over time)
+          # Format: (homeN, awayN) -> (match_id, swap_needed)
+          req_ko = urllib.request.Request(
+            f"{SB_URL}/rest/v1/wc26_store?key=eq.wc26_k&select=value",
+            headers={'apikey': SB_KEY, 'Authorization': f'Bearer {SB_KEY}'}
+          )
+          try:
+            with urllib.request.urlopen(req_ko) as resp:
+              ko_rows = json.loads(resp.read())
+            ko_data = ko_rows[0]['value'] if ko_rows else {}
+          except Exception as e:
+            print(f'KO load failed: {e}')
+            ko_data = {}
+
+          KO_LOOKUP = {}
+          for stage_matches in (ko_data or {}).values():
+            if not isinstance(stage_matches, list): continue
+            for km in stage_matches:
+              if not isinstance(km, dict): continue
+              hN, aN = km.get('homeN'), km.get('awayN')
+              mid = km.get('id')
+              if not (hN and aN and mid): continue
+              if hN == 'TBD' or aN == 'TBD': continue
+              KO_LOOKUP[(hN, aN)] = (mid, False)
+              KO_LOOKUP[(aN, hN)] = (mid, True)
 
           # --- fetch live scores (date window: yesterday → tomorrow) ---
           from datetime import datetime, timedelta, timezone
@@ -88,22 +115,50 @@ jobs:
               continue
             h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name'])
             a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name'])
+
+            # Group lookup first
             mid = LOOKUP.get(f'{h}|{a}')
+            swap = False
+            if not mid:
+              # KO lookup
+              info = KO_LOOKUP.get((h, a))
+              if info:
+                mid, swap = info
             if not mid:
               continue
             key = str(mid)
 
+            score = m.get('score') or {}
+            duration = score.get('duration')  # REGULAR / EXTRA_TIME / PENALTY_SHOOTOUT
+
             if status == 'FINISHED':
-              sc = (m.get('score') or {}).get('fullTime') or {}
-              if sc.get('home') is None or sc.get('away') is None:
+              # For KO with ET, use the post-ET score; for pens, use pre-pens (extraTime or fullTime)
+              ft = score.get('fullTime') or {}
+              et = score.get('extraTime') or {}
+              if et.get('home') is not None and et.get('away') is not None:
+                sc_h, sc_a = et['home'], et['away']
+              elif ft.get('home') is not None and ft.get('away') is not None:
+                sc_h, sc_a = ft['home'], ft['away']
+              else:
                 continue
-              entry = {'home': sc['home'], 'away': sc['away'], 'status': 'FINISHED'}
-            else:  # IN_PLAY — use halfTime as best available on free tier
-              ht = (m.get('score') or {}).get('halfTime') or {}
+              if swap:
+                sc_h, sc_a = sc_a, sc_h
+              entry = {'home': sc_h, 'away': sc_a, 'status': 'FINISHED'}
+              # If pens decided it, attach adv from winner
+              if duration == 'PENALTY_SHOOTOUT':
+                winner = score.get('winner')
+                # winner is from API's perspective; swap flips it
+                if winner == 'HOME_TEAM':
+                  entry['adv'] = 'a' if swap else 'h'
+                elif winner == 'AWAY_TEAM':
+                  entry['adv'] = 'h' if swap else 'a'
+            else:  # IN_PLAY
+              ht = (score.get('halfTime') or {})
               home_sc = ht.get('home') if ht.get('home') is not None else 0
               away_sc = ht.get('away') if ht.get('away') is not None else 0
+              if swap:
+                home_sc, away_sc = away_sc, home_sc
               entry = {'home': home_sc, 'away': away_sc, 'status': 'IN_PLAY'}
-              # Don't overwrite a FINISHED result with an IN_PLAY one
               cur = results.get(key, {})
               if cur.get('status') == 'FINISHED':
                 continue
@@ -115,7 +170,6 @@ jobs:
           if not changed:
             print('No changes.')
           else:
-            # --- write back to Supabase ---
             body = json.dumps({'key': 'wc26_r', 'value': results,
                                'updated_at': __import__('datetime').datetime.utcnow().isoformat()+'Z'})
             req3 = urllib.request.Request(
