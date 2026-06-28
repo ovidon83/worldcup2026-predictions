@@ -1251,7 +1251,9 @@ function buildMatchSchedule(){
     {key:'sf',label:'Semi Finals'},
     {key:'final',label:'Final'},
   ];
-  const ms=S.matchStage||'group';
+  // Default to latest open KO stage; fall back to group if none open
+  const latestOpenKO=['final','sf','qf','r16','r32'].find(s=>S.stageConfig[s]?.open);
+  const ms=S.matchStage||latestOpenKO||'group';
   let html=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
     ${stages.map(s=>`<button class="btn ${ms===s.key?'btn-gold':'btn-ghost'} btn-sm" data-mstage="${s.key}">${s.label}</button>`).join('')}
   </div>`;
