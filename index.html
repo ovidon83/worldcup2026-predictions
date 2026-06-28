@@ -1245,6 +1245,7 @@ function buildMatchSchedule(){
   // Stage selector
   const stages=[
     {key:'group',label:'Group Stage'},
+    {key:'r32',label:'Round of 32'},
     {key:'r16',label:'Round of 16'},
     {key:'qf',label:'Quarter Finals'},
     {key:'sf',label:'Semi Finals'},
@@ -2028,6 +2029,7 @@ function buildScoringContent(){
   // Per-stage examples: [predict, actual, description]
   const examples={
     group:['You predict Brazil 2–1 England','Result: Brazil 2–1 England','Exact score: +5 pts','exact'],
+    r32:['You predict Spain 2–0 Morocco','Result: Spain 2–0 Morocco','Exact score: +6 pts','exact'],
     r16:['You predict Argentina 1–0 France','Result: Argentina 2–0 France','Winner correct, wrong diff: +4 pts','win'],
     qf:['You predict Spain 1–1 Germany','Result: Spain 2–2 Germany','Draw correct, same diff: +3+6 pts → +9 pts','mix'],
     sf:['You predict Portugal 2–0 Brazil','Result: Brazil 1–0 Portugal','Wrong winner: 0 pts','zero'],
@@ -2100,12 +2102,12 @@ function buildAdminStages(){
       <div style="height:100%;background:${gp.done===gp.total?'var(--green2)':'linear-gradient(90deg,var(--red),var(--gold))'};border-radius:20px;width:${gp.pct}%;transition:width .4s"></div>
     </div>
     ${gp.done===gp.total
-      ?'<div style="font-size:0.74rem;color:var(--green2);font-weight:600">✓ All results in — R16 will auto-unlock if not already done</div>'
-      :`<div style="font-size:0.74rem;color:var(--txt3)">R16 auto-unlocks when all ${gp.total} group results are saved</div>`
+      ?'<div style="font-size:0.74rem;color:var(--green2);font-weight:600">✓ All results in — manually unlock R32 once FIFA confirms bracket</div>'
+      :`<div style="font-size:0.74rem;color:var(--txt3)">${gp.total-gp.done} group results remaining. R32 must be unlocked manually after FIFA bracket announcement; R16→Final auto-unlock from there.</div>`
     }
   </div>`;
 
-  const stages=['r16','qf','sf','final'];
+  const stages=['r32','r16','qf','sf','final'];
   const stageCards=stages.map(s=>{
     const cfg=S.stageConfig[s],info=STAGE_INFO[s],isOpen=cfg&&cfg.open,isLocked=dlPassed(s);
     const prevStage=stages[stages.indexOf(s)-1]||'group';
