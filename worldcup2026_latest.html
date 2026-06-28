@@ -461,12 +461,12 @@ const FIRST_GAME = {date:new Date('2026-06-11T15:00:00'),home:'🇲🇽',homeN:'
 
 const STAGE_INFO={
   group:{label:'Group Stage',  short:'Groups',icon:'🏟️',pts:{exact:5,winner:2,diff:1}},
-  // KO: tiered, no stacking. exact=top tier, advDiff=right team+same diff, adv=right team only
-  r32:  {label:'Round of 32', short:'R32',  icon:'⚔️',pts:{exact:6, advDiff:4, adv:2}},
-  r16:  {label:'Round of 16', short:'R16',  icon:'⚡',pts:{exact:10,advDiff:7, adv:4}},
-  qf:   {label:'Quarter Finals',short:'QF', icon:'🔥',pts:{exact:16,advDiff:11,adv:6}},
-  sf:   {label:'Semi Finals',  short:'SF',  icon:'⭐',pts:{exact:22,advDiff:15,adv:8}},
-  final:{label:'Final',        short:'Final',icon:'🏆',pts:{exact:30,advDiff:21,adv:12}},
+  // KO: tiered, no stacking. Same values as group across all rounds. exact=top, advDiff=winner+diff, adv=winner-only
+  r32:  {label:'Round of 32', short:'R32',  icon:'⚔️',pts:{exact:5,advDiff:3,adv:2}},
+  r16:  {label:'Round of 16', short:'R16',  icon:'⚡',pts:{exact:5,advDiff:3,adv:2}},
+  qf:   {label:'Quarter Finals',short:'QF', icon:'🔥',pts:{exact:5,advDiff:3,adv:2}},
+  sf:   {label:'Semi Finals',  short:'SF',  icon:'⭐',pts:{exact:5,advDiff:3,adv:2}},
+  final:{label:'Final',        short:'Final',icon:'🏆',pts:{exact:5,advDiff:3,adv:2}},
 };
 
 // ── ALL 72 GROUP STAGE MATCHES (accurate 2026 schedule, times in ET) ──
@@ -653,7 +653,7 @@ let S={
   unlockStage:null, unlockDeadline:'',
   confirmDelete:false,
   homeTab:'overview', bracketRound:'r16', expandedGroups:{},
-  matchStage:'group', matchGroup:'today',
+  matchStage:null, matchGroup:'today',
 };
 
 // ════════════════════════════════════════════
@@ -2023,8 +2023,8 @@ function buildPicksContent(openStages){
     </div>
     <div class="picks-body">
       ${!isGroup?`<div style="background:linear-gradient(135deg,var(--gold3),rgba(201,151,58,.04));border:1px solid rgba(201,151,58,.3);border-radius:var(--r2);padding:10px 12px;margin-bottom:12px;font-size:0.76rem;color:var(--txt2);line-height:1.5">
-        <div style="font-weight:700;color:var(--gold2);margin-bottom:3px">🆕 New KO scoring</div>
-        <div>🚫 No draws — pick a winner. 🏆 <strong>${STAGE_INFO[stage].pts.exact}</strong> exact 90' · <strong>${STAGE_INFO[stage].pts.advDiff}</strong> right team+diff · <strong>${STAGE_INFO[stage].pts.adv}</strong> right team only · 0 wrong team. Tap 📊 Pts for full rules.</div>
+        <div style="font-weight:700;color:var(--gold2);margin-bottom:3px">🆕 Knockout scoring</div>
+        <div>🚫 No draws — pick a winner. <strong>${STAGE_INFO[stage].pts.exact}</strong> exact score (90', ET, or pens) · <strong>${STAGE_INFO[stage].pts.advDiff}</strong> winner + diff · <strong>${STAGE_INFO[stage].pts.adv}</strong> winner only · 0 wrong team. Tap 📊 Pts for full rules.</div>
       </div>`:''}
       ${champCard}${body}
       ${!locked?`<button class="btn btn-green btn-block" id="save-btn2" style="margin-top:8px" ${S.saving?'disabled':''}>${S.saving?'Saving…':'💾 Save Predictions'}</button>`:''}
@@ -2104,9 +2104,9 @@ function buildScoringContent(){
         <span style="margin-left:auto;font-size:0.65rem;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">best tier wins</span>
       </div>
       <div class="sc-pts-row">
-        <div class="sc-pts-cell"><div class="sc-pts-n">${v.pts.exact}</div><div class="sc-pts-l">Exact 90'</div></div>
-        <div class="sc-pts-cell"><div class="sc-pts-n mid">${v.pts.advDiff}</div><div class="sc-pts-l">Advance + Diff</div></div>
-        <div class="sc-pts-cell"><div class="sc-pts-n lo">${v.pts.adv}</div><div class="sc-pts-l">Advance Only</div></div>
+        <div class="sc-pts-cell"><div class="sc-pts-n">${v.pts.exact}</div><div class="sc-pts-l">Exact Score</div></div>
+        <div class="sc-pts-cell"><div class="sc-pts-n mid">${v.pts.advDiff}</div><div class="sc-pts-l">Winner + Diff</div></div>
+        <div class="sc-pts-cell"><div class="sc-pts-n lo">${v.pts.adv}</div><div class="sc-pts-l">Winner Only</div></div>
       </div>
     </div>`;
   }).join('');
@@ -2118,9 +2118,9 @@ function buildScoringContent(){
     <div style="background:var(--navy3);border:1px solid var(--line2);border-radius:var(--r);padding:14px;font-size:0.78rem;color:var(--txt2);line-height:1.8">
       <div style="font-weight:700;color:var(--navy);margin-bottom:6px;font-family:'Oswald',sans-serif;letter-spacing:1px">KNOCKOUT RULES</div>
       <div>🚫 <strong>No draw picks</strong> — pick a winner for every KO match</div>
-      <div>🏆 <strong>Advance</strong> = team you picked actually progresses (90', ET, or pens — all count)</div>
-      <div>📏 <strong>Advance + Diff</strong> = right team + same goal difference (90' score)</div>
-      <div>🎯 <strong>Exact 90'</strong> = score matches end of regulation</div>
+      <div>🎯 <strong>Exact Score</strong> = predicted score matches final result (90', ET, or pens — all count)</div>
+      <div>📏 <strong>Winner + Diff</strong> = picked the team that advances AND same goal difference</div>
+      <div>🏆 <strong>Winner Only</strong> = picked the team that advances (any way — 90', ET, or pens)</div>
       <div style="margin-top:8px;color:var(--txt3)">Wrong team = 0 pts. No consolation for getting the score right on the wrong winner.</div>
     </div>
   </div>`;
