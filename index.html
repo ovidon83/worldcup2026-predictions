@@ -461,11 +461,12 @@ const FIRST_GAME = {date:new Date('2026-06-11T15:00:00'),home:'🇲🇽',homeN:'
 
 const STAGE_INFO={
   group:{label:'Group Stage',  short:'Groups',icon:'🏟️',pts:{exact:5,winner:2,diff:1}},
-  r32:  {label:'Round of 32', short:'R32',  icon:'⚔️',pts:{exact:6,winner:3,diff:1}},
-  r16:  {label:'Round of 16', short:'R16',  icon:'⚡',pts:{exact:8,winner:4,diff:2}},
-  qf:   {label:'Quarter Finals',short:'QF', icon:'🔥',pts:{exact:12,winner:6,diff:3}},
-  sf:   {label:'Semi Finals',  short:'SF',  icon:'⭐',pts:{exact:15,winner:8,diff:4}},
-  final:{label:'Final',        short:'Final',icon:'🏆',pts:{exact:20,winner:10,diff:5}},
+  // KO: tiered, no stacking. exact=top tier, advDiff=right team+same diff, adv=right team only
+  r32:  {label:'Round of 32', short:'R32',  icon:'⚔️',pts:{exact:6, advDiff:4, adv:2}},
+  r16:  {label:'Round of 16', short:'R16',  icon:'⚡',pts:{exact:10,advDiff:7, adv:4}},
+  qf:   {label:'Quarter Finals',short:'QF', icon:'🔥',pts:{exact:16,advDiff:11,adv:6}},
+  sf:   {label:'Semi Finals',  short:'SF',  icon:'⭐',pts:{exact:22,advDiff:15,adv:8}},
+  final:{label:'Final',        short:'Final',icon:'🏆',pts:{exact:30,advDiff:21,adv:12}},
 };
 
 // ── ALL 72 GROUP STAGE MATCHES (accurate 2026 schedule, times in ET) ──
@@ -728,12 +729,24 @@ function calcPts(pred,actual,stage){
   if(!actual||actual.status==='IN_PLAY'||pred.home===undefined||pred.home==='') return 0;
   const pts=(STAGE_INFO[stage]||STAGE_INFO.group).pts;
   const ph=+pred.home,pa=+pred.away,ah=+actual.home,aa=+actual.away;
+  // Group: stacking exact + winner + diff
+  if(stage==='group'||!stage){
+    if(ph===ah&&pa===aa) return pts.exact;
+    let p=0;
+    const pW=ph>pa?'h':ph<pa?'a':'d', aW=ah>aa?'h':ah<aa?'a':'d';
+    if(pW===aW) p+=pts.winner;
+    if(Math.abs(ph-pa)===Math.abs(ah-aa)) p+=pts.diff;
+    return p;
+  }
+  // KO: tiered, no draws allowed in picks
+  if(ph===pa) return 0;
+  const pAdv=ph>pa?'h':'a';
+  const aAdv=actual.adv||(ah>aa?'h':ah<aa?'a':null);
+  if(!aAdv) return 0;
+  if(pAdv!==aAdv) return 0;
   if(ph===ah&&pa===aa) return pts.exact;
-  let p=0;
-  const pW=ph>pa?'h':ph<pa?'a':'d', aW=ah>aa?'h':ah<aa?'a':'d';
-  if(pW===aW) p+=pts.winner;
-  if(Math.abs(ph-pa)===Math.abs(ah-aa)) p+=pts.diff;
-  return p;
+  if(Math.abs(ph-pa)===Math.abs(ah-aa)) return pts.advDiff;
+  return pts.adv;
 }
 
 async function buildLB(){
@@ -1088,6 +1101,7 @@ function autoFill(){
   const matches=stage==='group'?GM:(S.koMatches[stage]||[]);
   const locked=dlPassed(stage);
   if(locked) return;
+  const isKO=stage!=='group';
   // Realistic score weights: 0-0 through 4-4, weighted toward low-scoring
   const goals=[0,0,0,1,1,1,1,1,2,2,2,2,3,3,4];
   let filled=0;
@@ -1095,8 +1109,12 @@ function autoFill(){
     // Only fill matches that haven't been predicted yet
     const already=S.userPreds[m.id]||S.tempScores[m.id];
     if(already&&already.home!==undefined&&already.home!=='') return;
-    const h=goals[Math.floor(Math.random()*goals.length)];
-    const a=goals[Math.floor(Math.random()*goals.length)];
+    let h=goals[Math.floor(Math.random()*goals.length)];
+    let a=goals[Math.floor(Math.random()*goals.length)];
+    // KO: re-roll until non-draw
+    let tries=0;
+    while(isKO&&h===a&&tries<10){a=goals[Math.floor(Math.random()*goals.length)];tries++;}
+    if(isKO&&h===a)a=h+1;
     S.tempScores[m.id]={home:String(h),away:String(a)};
     filled++;
   });
@@ -1105,15 +1123,23 @@ function autoFill(){
 }
 async function saveP(){
   if(dlPassed(S.pstage))return;
+  const isKO=S.pstage!=='group';
+  let skipped=0;
   S.saving=true;render();
   Object.entries(S.tempScores).forEach(([id,sc])=>{
-    if(sc.home!==''&&sc.away!=='')S.userPreds[+id]={home:+sc.home,away:+sc.away};
+    if(sc.home===''||sc.away==='')return;
+    if(isKO&&+sc.home===+sc.away){skipped++;return;}
+    S.userPreds[+id]={home:+sc.home,away:+sc.away};
   });
-  S.tempScores={};
+  // Keep skipped (draw) picks in tempScores so user can fix them
+  Object.keys(S.tempScores).forEach(id=>{
+    const sc=S.tempScores[id];
+    if(!(isKO&&sc.home!==''&&sc.away!==''&&+sc.home===+sc.away))delete S.tempScores[id];
+  });
   const all=await getPreds();all[S.user.username]=S.userPreds;
   await putPreds(all);
   S.saving=false;
-  toast('Predictions saved!');
+  toast(skipped?`Saved ✓ — ${skipped} draw pick${skipped>1?'s':''} skipped`:'Predictions saved!',skipped>0);
   render();
   // Refresh leaderboard if it's visible in the current page
   refreshLB();
@@ -1121,11 +1147,16 @@ async function saveP(){
 async function saveResult(id){
   const ri=S.resultInputs[id]||{};
   if(ri.home===undefined||ri.away===undefined){toast('Enter both scores',true);return;}
-  S.results[id]={home:+ri.home,away:+ri.away};
+  const m=allM().find(x=>x.id===+id);
+  const isKO=m&&m.stage&&m.stage!=='group';
+  const isDraw=+ri.home===+ri.away;
+  if(isKO&&isDraw&&!ri.adv){toast("90' draw — pick which team advanced",true);return;}
+  const r={home:+ri.home,away:+ri.away};
+  if(isKO&&isDraw)r.adv=ri.adv;
+  S.results[id]=r;
   await putRes(S.results);
   toast('Result saved ✓');
   render();
-  // Check if this result completes a stage and should auto-unlock the next
   await checkAutoAdvance();
 }
 async function doUnlock(stage,matches,deadline){
@@ -1865,7 +1896,7 @@ function buildPicksContent(openStages){
   const matches=isGroup?GM:(S.koMatches[stage]||[]);
   const playableMatches=isGroup?matches:matches.filter(m=>m.resolved!==false&&!isPhantomSlot(m.slotHome)&&!isPhantomSlot(m.slotAway));
   let cnt=0;
-  playableMatches.forEach(m=>{const c=S.tempScores[m.id]||S.userPreds[m.id]||{};if(c.home!==undefined&&c.home!=='')cnt++;});
+  playableMatches.forEach(m=>{const c=S.tempScores[m.id]||S.userPreds[m.id]||{};if(c.home!==undefined&&c.home!==''&&c.away!==undefined&&c.away!==''&&!(isGroup===false&&+c.home===+c.away))cnt++;});
   const pct=playableMatches.length?Math.round(cnt/playableMatches.length*100):0;
   const v=cfg&&cfg.deadline?cdt(cfg.deadline):null;
 
@@ -1991,6 +2022,10 @@ function buildPicksContent(openStages){
       ${actions}
     </div>
     <div class="picks-body">
+      ${!isGroup?`<div style="background:linear-gradient(135deg,var(--gold3),rgba(201,151,58,.04));border:1px solid rgba(201,151,58,.3);border-radius:var(--r2);padding:10px 12px;margin-bottom:12px;font-size:0.76rem;color:var(--txt2);line-height:1.5">
+        <div style="font-weight:700;color:var(--gold2);margin-bottom:3px">🆕 New KO scoring</div>
+        <div>🚫 No draws — pick a winner. 🏆 <strong>${STAGE_INFO[stage].pts.exact}</strong> exact 90' · <strong>${STAGE_INFO[stage].pts.advDiff}</strong> right team+diff · <strong>${STAGE_INFO[stage].pts.adv}</strong> right team only · 0 wrong team. Tap 📊 Pts for full rules.</div>
+      </div>`:''}
       ${champCard}${body}
       ${!locked?`<button class="btn btn-green btn-block" id="save-btn2" style="margin-top:8px" ${S.saving?'disabled':''}>${S.saving?'Saving…':'💾 Save Predictions'}</button>`:''}
       ${isGroup&&groupStageDone()?buildMyAdvancementSummary():isGroup&&!groupStageDone()?`<div style='margin-top:14px;padding:12px;background:var(--gold3);border:1px solid rgba(201,151,58,.2);border-radius:var(--r2);font-size:0.78rem;color:var(--txt2)'>⏳ <strong style='color:var(--gold2)'>Advancement bonus</strong> — +${ADV_BONUS_PTS}pts per top-2 correctly predicted. Applied when all 36 group results are in.</div>`:''}
@@ -2003,7 +2038,10 @@ function mcHTML(m,locked,stage){
   const has=cur.home!==undefined&&cur.home!=='';
   const res=S.results[m.id];
   const pts=has&&res?calcPts(cur,res,stage):null;
-  return `<div class="mc ${res?'done':stage!=='group'?'ko':'open'}">
+  const isKO=stage!=='group';
+  const isDraw=has&&cur.away!==''&&+cur.home===+cur.away;
+  const drawWarn=isKO&&isDraw;
+  return `<div class="mc ${res?'done':isKO?'ko':'open'}" ${drawWarn?'style="border-color:var(--red);"':''}>
     <div class="mc-top">
       <span class="mc-badge">${m.round||m.group}</span>
       <span class="mc-date">${m.date}${m.time?' · '+fmt12h(m.time):''}</span>
@@ -2020,72 +2058,70 @@ function mcHTML(m,locked,stage){
       <input class="mc-inp" type="number" min="0" max="20" step="1" placeholder="0"
         value="${tmp?.away??sv?.away??''}" data-mid="${m.id}" data-side="away" ${locked?'disabled':''}/>
     </div>
+    ${drawWarn?`<div style="font-size:0.72rem;color:var(--red2);margin-top:6px;text-align:center">⚠ Draws not allowed — pick a winner</div>`:''}
     <div class="mc-foot">
-      ${res?`<div class="mc-result">Result: <strong>${res.home}–${res.away}</strong></div>${pts!==null?`<div class="mc-pts">${pts} pts</div>`:''}`:has?`<div class="mc-saved">Saved</div><div></div>`:`<div></div><div></div>`}
+      ${res?`<div class="mc-result">Result: <strong>${res.home}–${res.away}</strong></div>${pts!==null?`<div class="mc-pts">${pts} pts</div>`:''}`:has&&!drawWarn?`<div class="mc-saved">Saved</div><div></div>`:`<div></div><div></div>`}
     </div>
   </div>`;
 }
 
 // ─── SCORING ───
 function buildScoringContent(){
-  // Per-stage examples: [predict, actual, description]
-  const examples={
-    group:['You predict Brazil 2–1 England','Result: Brazil 2–1 England','Exact score: +5 pts','exact'],
-    r32:['You predict Spain 2–0 Morocco','Result: Spain 2–0 Morocco','Exact score: +6 pts','exact'],
-    r16:['You predict Argentina 1–0 France','Result: Argentina 2–0 France','Winner correct, wrong diff: +4 pts','win'],
-    qf:['You predict Spain 1–1 Germany','Result: Spain 2–2 Germany','Draw correct, same diff: +3+6 pts → +9 pts','mix'],
-    sf:['You predict Portugal 2–0 Brazil','Result: Brazil 1–0 Portugal','Wrong winner: 0 pts','zero'],
-    final:['You predict Netherlands 3–1 England','Result: Netherlands 1–0 England','Winner correct: +10 pts','win'],
-  };
+  const groupEx=['You predict Brazil 2–1 England','Result: Brazil 2–1 England','Exact score: 5 pts','exact'];
   const exBadge=(type,pts)=>{
     if(type==='exact') return `<span class="sc-badge exact">${pts} pts ✓ Exact!</span>`;
     if(type==='win') return `<span class="sc-badge win">${pts}</span>`;
-    if(type==='mix') return `<span class="sc-badge win">${pts}</span>`;
     if(type==='zero') return `<span class="sc-badge zero">0 pts</span>`;
     return '';
   };
+  // Group card (stacking)
+  const g=STAGE_INFO.group;
+  const groupCard=`<div class="sc-card">
+    <div class="sc-card-hdr">
+      <span class="sc-card-icon">${g.icon}</span>
+      <span class="sc-card-label">${g.label}</span>
+      <span style="margin-left:auto;font-size:0.65rem;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">stacks</span>
+    </div>
+    <div class="sc-pts-row">
+      <div class="sc-pts-cell"><div class="sc-pts-n">${g.pts.exact}</div><div class="sc-pts-l">Exact Score</div></div>
+      <div class="sc-pts-cell"><div class="sc-pts-n mid">${g.pts.winner}</div><div class="sc-pts-l">Winner / Draw</div></div>
+      <div class="sc-pts-cell"><div class="sc-pts-n lo">${g.pts.diff}</div><div class="sc-pts-l">Goal Diff</div></div>
+    </div>
+    <div class="sc-example">
+      <div style="color:var(--txt2)">${groupEx[0]}</div>
+      <div class="sc-res"><span style="color:var(--txt3)">→</span><span style="font-weight:600;color:var(--txt)">${groupEx[1]}</span><span style="color:var(--txt3)">·</span>${exBadge(groupEx[3],groupEx[2].split(':')[1]?.trim()||'')}</div>
+      <div style="font-size:0.72rem;color:var(--txt3);margin-top:3px">${groupEx[2]}</div>
+    </div>
+  </div>`;
+  // KO cards (tiered, no stacking)
+  const koStages=['r32','r16','qf','sf','final'];
+  const koCards=koStages.map(k=>{
+    const v=STAGE_INFO[k];
+    return `<div class="sc-card">
+      <div class="sc-card-hdr">
+        <span class="sc-card-icon">${v.icon}</span>
+        <span class="sc-card-label">${v.label}</span>
+        <span style="margin-left:auto;font-size:0.65rem;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">best tier wins</span>
+      </div>
+      <div class="sc-pts-row">
+        <div class="sc-pts-cell"><div class="sc-pts-n">${v.pts.exact}</div><div class="sc-pts-l">Exact 90'</div></div>
+        <div class="sc-pts-cell"><div class="sc-pts-n mid">${v.pts.advDiff}</div><div class="sc-pts-l">Advance + Diff</div></div>
+        <div class="sc-pts-cell"><div class="sc-pts-n lo">${v.pts.adv}</div><div class="sc-pts-l">Advance Only</div></div>
+      </div>
+    </div>`;
+  }).join('');
   return `<div style="padding-bottom:16px">
     <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:4px">Scoring System</div>
-    <p style="font-size:0.8rem;color:var(--txt3);margin-bottom:14px">Points scale up every round. Exact score always earns the most.</p>
-    ${Object.entries(STAGE_INFO).map(([k,v])=>{
-      const ex=examples[k];
-      return `<div class="sc-card">
-        <div class="sc-card-hdr">
-          <span class="sc-card-icon">${v.icon}</span>
-          <span class="sc-card-label">${v.label}</span>
-        </div>
-        <div class="sc-pts-row">
-          <div class="sc-pts-cell">
-            <div class="sc-pts-n">${v.pts.exact}</div>
-            <div class="sc-pts-l">Exact Score</div>
-          </div>
-          <div class="sc-pts-cell">
-            <div class="sc-pts-n mid">${v.pts.winner}</div>
-            <div class="sc-pts-l">Winner / Draw</div>
-          </div>
-          <div class="sc-pts-cell">
-            <div class="sc-pts-n lo">${v.pts.diff}</div>
-            <div class="sc-pts-l">Goal Diff</div>
-          </div>
-        </div>
-        <div class="sc-example">
-          <div style="color:var(--txt2)">${ex[0]}</div>
-          <div class="sc-res">
-            <span style="color:var(--txt3)">→</span>
-            <span style="font-weight:600;color:var(--txt)">${ex[1]}</span>
-            <span style="color:var(--txt3)">·</span>
-            ${exBadge(ex[3],ex[2].split(':')[1]?.trim()||'')}
-          </div>
-          <div style="font-size:0.72rem;color:var(--txt3);margin-top:3px">${ex[2]}</div>
-        </div>
-      </div>`;
-    }).join('')}
+    <p style="font-size:0.8rem;color:var(--txt3);margin-bottom:14px">Group stage stacks bonuses. Knockouts use tiered scoring — best tier wins, no stacking.</p>
+    ${groupCard}
+    ${koCards}
     <div style="background:var(--navy3);border:1px solid var(--line2);border-radius:var(--r);padding:14px;font-size:0.78rem;color:var(--txt2);line-height:1.8">
-      <div style="font-weight:700;color:var(--navy);margin-bottom:6px;font-family:'Oswald',sans-serif;letter-spacing:1px">HOW POINTS STACK</div>
-      <div>✅ Exact score gives all 3 bonuses at once (exact + winner + diff)</div>
-      <div>🎯 Correct winner/draw: winner bonus only</div>
-      <div>📏 Same goal difference, wrong winner: diff bonus only</div>
-      <div style="margin-top:8px;color:var(--txt3)">Points can combine: correct winner <strong style="color:var(--txt)">+</strong> correct goal diff = both bonuses.</div>
+      <div style="font-weight:700;color:var(--navy);margin-bottom:6px;font-family:'Oswald',sans-serif;letter-spacing:1px">KNOCKOUT RULES</div>
+      <div>🚫 <strong>No draw picks</strong> — pick a winner for every KO match</div>
+      <div>🏆 <strong>Advance</strong> = team you picked actually progresses (90', ET, or pens — all count)</div>
+      <div>📏 <strong>Advance + Diff</strong> = right team + same goal difference (90' score)</div>
+      <div>🎯 <strong>Exact 90'</strong> = score matches end of regulation</div>
+      <div style="margin-top:8px;color:var(--txt3)">Wrong team = 0 pts. No consolation for getting the score right on the wrong winner.</div>
     </div>
   </div>`;
 }
@@ -2185,6 +2221,10 @@ function buildAdminResults(){
 }
 function amc(m){
   const res=S.results[m.id]||{},ri=S.resultInputs[m.id]||{};
+  const isKO=m.stage&&m.stage!=='group';
+  const h=ri.home??res.home??'',a=ri.away??res.away??'';
+  const isDraw=h!==''&&a!==''&&+h===+a;
+  const curAdv=ri.adv??res.adv??'';
   return `<div class="mc open">
     <div class="mc-top"><span class="mc-badge">${m.round||m.group}</span><span class="mc-date">${m.date}</span></div>
     <div class="mc-body">
@@ -2193,10 +2233,17 @@ function amc(m){
       <div class="mc-team"><span class="mc-flag">${m.away}</span><span class="mc-tname">${m.awayN}</span></div>
     </div>
     <div class="mc-inp-row">
-      <input class="mc-inp" type="number" min="0" max="20" step="1" placeholder="0" value="${ri.home??res.home??''}" data-rmid="${m.id}" data-rside="home"/>
+      <input class="mc-inp" type="number" min="0" max="20" step="1" placeholder="0" value="${h}" data-rmid="${m.id}" data-rside="home"/>
       <div class="mc-dash">–</div>
-      <input class="mc-inp" type="number" min="0" max="20" step="1" placeholder="0" value="${ri.away??res.away??''}" data-rmid="${m.id}" data-rside="away"/>
+      <input class="mc-inp" type="number" min="0" max="20" step="1" placeholder="0" value="${a}" data-rmid="${m.id}" data-rside="away"/>
     </div>
+    ${isKO&&isDraw?`<div style="margin-top:8px;padding:8px;background:var(--s2);border:1px solid var(--line);border-radius:var(--r2)">
+      <div style="font-size:0.72rem;color:var(--txt3);margin-bottom:6px">90' draw — which team advanced (ET/pens)?</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn ${curAdv==='h'?'btn-gold':'btn-ghost'} btn-sm" data-radv="${m.id}" data-rside="h" style="flex:1">${m.home} ${m.homeN}</button>
+        <button class="btn ${curAdv==='a'?'btn-gold':'btn-ghost'} btn-sm" data-radv="${m.id}" data-rside="a" style="flex:1">${m.away} ${m.awayN}</button>
+      </div>
+    </div>`:''}
     <button class="btn btn-green btn-sm" data-saveres="${m.id}" style="width:100%;justify-content:center;margin-top:10px">${res.home!==undefined?'✏️ Update':'✅ Save Result'}</button>
   </div>`;
 }
@@ -2410,10 +2457,19 @@ function attachAll(){
   }));
 
   // admin results
-  qAll('[data-rmid]').forEach(el=>el.addEventListener('change',e=>{
+  qAll('[data-rmid]').forEach(el=>el.addEventListener('input',e=>{
     const mid=+e.target.dataset.rmid,side=e.target.dataset.rside;
     if(!S.resultInputs[mid])S.resultInputs[mid]={};
     S.resultInputs[mid][side]=+e.target.value;
+    // Re-render to show/hide advancer picker on draw
+    const m=allM().find(x=>x.id===mid);
+    if(m&&m.stage&&m.stage!=='group')render();
+  }));
+  qAll('[data-radv]').forEach(el=>el.addEventListener('click',()=>{
+    const mid=+el.dataset.radv,side=el.dataset.rside;
+    if(!S.resultInputs[mid])S.resultInputs[mid]={};
+    S.resultInputs[mid].adv=side;
+    render();
   }));
   qAll('[data-saveres]').forEach(el=>el.addEventListener('click',()=>saveResult(+el.dataset.saveres)));
 
