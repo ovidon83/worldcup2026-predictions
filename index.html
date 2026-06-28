@@ -721,6 +721,8 @@ function dlPassed(stage){
   if(stage==='group') return new Date()>=new Date(DEADLINE);
   const c=S.stageConfig[stage];
   if(!c||!c.open||!c.deadline) return false;
+  // Per-user override list — these users can keep picking past the deadline
+  if(S.user&&Array.isArray(c.override)&&c.override.includes(S.user.username))return false;
   return new Date(c.deadline)<new Date();
 }
 function stageOpen(s){return!!(S.stageConfig[s]&&S.stageConfig[s].open&&!dlPassed(s));}
