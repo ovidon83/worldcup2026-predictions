@@ -1052,6 +1052,10 @@ async function doLogin(){
     const all=await getPreds();S.userPreds=all[found.username]||{};
     const cp=await getChampPicks();S.championPick=cp[found.username]||'';
     S.chatMsgs=await getChat();
+    // Refresh stage config + KO matches so overrides/unlocks take effect without page reload
+    const [st,ko]=await Promise.all([getST(),getKO()]);
+    if(st)S.stageConfig=st;
+    if(ko)S.koMatches=ko;
     S.page='app';S.nav='home';S.loginU='';S.loginP='';S.authErr='';
     try{localStorage.setItem('wc26_auth',JSON.stringify({username:found.username}));}catch(e){}
     toast('Welcome back, '+found.username+'!');
