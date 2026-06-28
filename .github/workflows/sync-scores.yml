@@ -108,13 +108,15 @@ jobs:
           results = rows[0]['value'] if rows else {}
 
           # --- apply updates ---
+          print(f'API returned {len(matches)} matches in window. KO_LOOKUP has {len(KO_LOOKUP)} entries.')
           changed = False
           for m in matches:
             status = m['status']
-            if status not in ('FINISHED', 'IN_PLAY'):
-              continue
             h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name'])
             a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name'])
+            print(f'  {status}: {h} vs {a} (raw: {m["homeTeam"]["name"]} / {m["awayTeam"]["name"]}) score={m.get("score",{}).get("fullTime")} dur={m.get("score",{}).get("duration")}')
+            if status not in ('FINISHED', 'IN_PLAY'):
+              continue
 
             # Group lookup first
             mid = LOOKUP.get(f'{h}|{a}')
@@ -125,7 +127,9 @@ jobs:
               if info:
                 mid, swap = info
             if not mid:
+              print(f'    -> no match in LOOKUP/KO_LOOKUP')
               continue
+            print(f'    -> matched id={mid} swap={swap}')
             key = str(mid)
 
             score = m.get('score') or {}
