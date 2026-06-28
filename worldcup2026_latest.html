@@ -2454,6 +2454,9 @@ function attachAll(){
     const mid=+e.target.dataset.mid,side=e.target.dataset.side;
     if(!S.tempScores[mid])S.tempScores[mid]={home:'',away:'',...(S.userPreds[mid]||{})};
     S.tempScores[mid][side]=e.target.value;
+    // Re-render KO matches to show/hide draw warning
+    const m=allM().find(x=>x.id===mid);
+    if(m&&m.stage&&m.stage!=='group')render();
   }));
 
   // admin results
