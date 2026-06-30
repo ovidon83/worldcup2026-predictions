@@ -1337,9 +1337,22 @@ function buildMatchSchedule(){
         <div style="font-size:0.82rem;color:var(--txt3)">This round hasn't been unlocked yet. Check back after the previous stage ends.</div>
       </div>`;
     } else {
-      // Group KO matches by date
+      // Today filter for KO stages — default to Today if there are matches today
+      const _td=new Date();
+      const _mons=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const todayStr=_mons[_td.getMonth()]+' '+_td.getDate();
+      const hasToday=matches.some(m=>m.date===todayStr);
+      const activeKO=S.matchGroup||'today';
+      if(hasToday){
+        html+=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:16px">
+          <button class="btn ${activeKO==='today'?'btn-gold':'btn-ghost'} btn-sm" data-mgroup="today">Today</button>
+          <button class="btn ${activeKO==='all'?'btn-gold':'btn-ghost'} btn-sm" data-mgroup="all">All</button>
+        </div>`;
+      }
+      const filtered=(hasToday&&activeKO==='today')?matches.filter(m=>m.date===todayStr):matches;
+      // Group by date
       const byDate={};
-      matches.forEach(m=>{if(!byDate[m.date])byDate[m.date]=[];byDate[m.date].push(m);});
+      filtered.forEach(m=>{if(!byDate[m.date])byDate[m.date]=[];byDate[m.date].push(m);});
       const toD2=s=>new Date('2026-'+s.replace('Jun ','06-').replace('Jul ','07-'));
       Object.entries(byDate).sort(([a],[b])=>toD2(a)-toD2(b)).forEach(([date,ms2])=>{
         html+=buildDaySection(date,ms2,true);
