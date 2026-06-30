@@ -1383,7 +1383,7 @@ function buildDaySection(date,matches,isKO=false){
           </div>
           <div style="text-align:center;min-width:80px">
             ${r?`<div style="font-family:'Oswald',sans-serif;font-size:1.4rem;font-weight:700;color:var(--navy);letter-spacing:1px">${r.home} – ${r.away}</div>
-                 <div style="font-size:0.58rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${(r.status==='IN_PLAY'||(!r.status&&live))?'var(--red2)':(r.status==='FINISHED'||(!r.status&&done))?'var(--green2)':'var(--txt3)'};margin-top:2px">${(r.status==='IN_PLAY'||(!r.status&&live))?'● LIVE':(r.status==='FINISHED'||(!r.status&&done))?'FT':fmt12h(m.time)}</div>`
+                 <div style="font-size:0.58rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${(r.status==='IN_PLAY'||(!r.status&&live))?'var(--red2)':(r.status==='FINISHED'||(!r.status&&done))?'var(--green2)':'var(--txt3)'};margin-top:2px">${(r.status==='IN_PLAY'||(!r.status&&live))?'● LIVE':(r.status==='FINISHED'||(!r.status&&done))?(r.adv?'PENS · '+(r.adv==='h'?m.homeN:m.awayN):r.et?'AET':'FT'):fmt12h(m.time)}</div>`
             :`<div style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:600;color:var(--txt3)${live?';color:var(--red2)':''}">${live?'<span class="live-dot" style="width:8px;height:8px;vertical-align:middle;margin-right:4px"></span>':fmt12h(m.time)}</div>
                ${live?'<div style="font-size:0.58rem;font-weight:700;color:var(--red2);margin-top:2px;letter-spacing:1px">LIVE</div>':''}`}
           </div>
@@ -1493,7 +1493,7 @@ function buildMatchDayGames(games){
     const isLive=r?.status==='IN_PLAY'||((!r||!r.status)&&live);
     const isFt=r?.status==='FINISHED'||((!r||!r.status)&&done);
     return `<div class="gw-row">
-      <div class="gw-status">${isLive?'<span class="gw-pill live"><span class="live-dot" style="margin-right:3px;width:5px;height:5px"></span>Live</span>':isFt?'<span class="gw-pill ft">FT</span>':`<span class="gw-pill soon">${fmt12h(m.time)}</span>`}</div>
+      <div class="gw-status">${isLive?'<span class="gw-pill live"><span class="live-dot" style="margin-right:3px;width:5px;height:5px"></span>Live</span>':isFt?`<span class="gw-pill ft">${r?.adv?'PENS':r?.et?'AET':'FT'}</span>`:`<span class="gw-pill soon">${fmt12h(m.time)}</span>`}</div>
       <div class="gw-team-l"><span class="gw-name" style="${homeWin?'color:var(--navy);font-weight:700':''}">${m.homeN}</span><span class="gw-flag">${m.home}</span></div>
       <div class="gw-score ${isLive?'live':''}" style="${isFt&&r?'color:var(--navy);font-weight:700;background:var(--s2)':''}">${r?`${r.home}–${r.away}`:isLive?'<span class="live-dot"></span>':'–'}</div>
       <div class="gw-team-r"><span class="gw-flag">${m.away}</span><span class="gw-name" style="${awayWin?'color:var(--navy);font-weight:700':''}">${m.awayN}</span></div>
@@ -2066,7 +2066,7 @@ function mcHTML(m,locked,stage){
     </div>
     ${drawWarn?`<div style="font-size:0.72rem;color:var(--red2);margin-top:6px;text-align:center">⚠ Draws not allowed — pick a winner</div>`:''}
     <div class="mc-foot">
-      ${res?`<div class="mc-result">Result: <strong>${res.home}–${res.away}</strong></div>${pts!==null?`<div class="mc-pts">${pts} pts</div>`:''}`:has&&!drawWarn?`<div class="mc-saved">Saved</div><div></div>`:`<div></div><div></div>`}
+      ${res?`<div class="mc-result">Result: <strong>${res.home}–${res.away}</strong>${res.adv?` <span style="font-size:0.7rem;color:var(--txt3)">PENS · ${res.adv==='h'?m.homeN:m.awayN}</span>`:res.et?` <span style="font-size:0.7rem;color:var(--txt3)">AET</span>`:''}</div>${pts!==null?`<div class="mc-pts">${pts} pts</div>`:''}`:has&&!drawWarn?`<div class="mc-saved">Saved</div><div></div>`:`<div></div><div></div>`}
     </div>
   </div>`;
 }
