@@ -148,14 +148,25 @@ jobs:
               if swap:
                 sc_h, sc_a = sc_a, sc_h
               entry = {'home': sc_h, 'away': sc_a, 'status': 'FINISHED'}
-              # If pens decided it, attach adv from winner
+              # If pens decided it, attach adv. Try multiple sources in order:
+              # 1. score.winner   2. score.penalties (higher score = winner)   3. fullTime vs extraTime (free-tier puts pens-inclusive score in fullTime)
               if duration == 'PENALTY_SHOOTOUT':
+                api_adv = None  # 'h' or 'a' from API perspective (before swap)
                 winner = score.get('winner')
-                # winner is from API's perspective; swap flips it
-                if winner == 'HOME_TEAM':
-                  entry['adv'] = 'a' if swap else 'h'
-                elif winner == 'AWAY_TEAM':
-                  entry['adv'] = 'h' if swap else 'a'
+                if winner == 'HOME_TEAM': api_adv = 'h'
+                elif winner == 'AWAY_TEAM': api_adv = 'a'
+                if api_adv is None:
+                  pens = score.get('penalties') or {}
+                  if pens.get('home') is not None and pens.get('away') is not None:
+                    api_adv = 'h' if pens['home'] > pens['away'] else 'a'
+                if api_adv is None and ft.get('home') is not None and et.get('home') is not None:
+                  # Free-tier quirk: fullTime carries pens-inclusive score; ET has pre-pens
+                  if ft['home'] > ft['away']: api_adv = 'h'
+                  elif ft['home'] < ft['away']: api_adv = 'a'
+                if api_adv:
+                  entry['adv'] = ('a' if api_adv == 'h' else 'h') if swap else api_adv
+                else:
+                  print(f'    !! PENALTY_SHOOTOUT but cannot determine adv for mid={mid}')
             else:  # IN_PLAY
               ht = (score.get('halfTime') or {})
               home_sc = ht.get('home') if ht.get('home') is not None else 0
