@@ -132,6 +132,11 @@ jobs:
             print(f'    -> matched id={mid} swap={swap}')
             key = str(mid)
 
+            # Skip if admin manually overrode this result (API is unreliable on free tier for ET/pens)
+            if results.get(key, {}).get('manual'):
+              print(f'    -> skip: manual override in place for {key}')
+              continue
+
             score = m.get('score') or {}
             duration = score.get('duration')  # REGULAR / EXTRA_TIME / PENALTY_SHOOTOUT
 
