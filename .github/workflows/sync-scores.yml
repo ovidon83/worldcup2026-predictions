@@ -90,7 +90,7 @@ jobs:
           from datetime import datetime, timedelta, timezone
           today = datetime.now(timezone.utc).date()
           d_from = (today - timedelta(days=1)).isoformat()
-          d_to   = (today + timedelta(days=1)).isoformat()
+          d_to   = (today + timedelta(days=7)).isoformat()
           req = urllib.request.Request(
             f'https://api.football-data.org/v4/competitions/WC/matches?dateFrom={d_from}&dateTo={d_to}',
             headers={'X-Auth-Token': FDAPI}
@@ -114,7 +114,7 @@ jobs:
             status = m['status']
             h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name'])
             a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name'])
-            print(f'  {status}: {h} vs {a} ft={m.get("score",{}).get("fullTime")} et={m.get("score",{}).get("extraTime")} pen={m.get("score",{}).get("penalties")} dur={m.get("score",{}).get("duration")} winner={m.get("score",{}).get("winner")}')
+            print(f'  {status}: {h} vs {a} utc={m.get("utcDate")} ft={m.get("score",{}).get("fullTime")} et={m.get("score",{}).get("extraTime")} pen={m.get("score",{}).get("penalties")} dur={m.get("score",{}).get("duration")} winner={m.get("score",{}).get("winner")}')
             if status not in ('FINISHED', 'IN_PLAY'):
               continue
 
