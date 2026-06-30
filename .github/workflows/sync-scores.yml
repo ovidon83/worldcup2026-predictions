@@ -114,7 +114,7 @@ jobs:
             status = m['status']
             h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name'])
             a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name'])
-            print(f'  {status}: {h} vs {a} (raw: {m["homeTeam"]["name"]} / {m["awayTeam"]["name"]}) score={m.get("score",{}).get("fullTime")} dur={m.get("score",{}).get("duration")}')
+            print(f'  {status}: {h} vs {a} ft={m.get("score",{}).get("fullTime")} et={m.get("score",{}).get("extraTime")} pen={m.get("score",{}).get("penalties")} dur={m.get("score",{}).get("duration")} winner={m.get("score",{}).get("winner")}')
             if status not in ('FINISHED', 'IN_PLAY'):
               continue
 
@@ -148,6 +148,9 @@ jobs:
               if swap:
                 sc_h, sc_a = sc_a, sc_h
               entry = {'home': sc_h, 'away': sc_a, 'status': 'FINISHED'}
+              # Mark ET-or-pens matches so UI can show AET/PENS badge
+              if duration in ('EXTRA_TIME','PENALTY_SHOOTOUT'):
+                entry['et'] = True
               # If pens decided it, attach adv. Try multiple sources in order:
               # 1. score.winner   2. score.penalties (higher score = winner)   3. fullTime vs extraTime (free-tier puts pens-inclusive score in fullTime)
               if duration == 'PENALTY_SHOOTOUT':
