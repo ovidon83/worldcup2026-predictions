@@ -722,8 +722,13 @@ function dlPassed(stage){
   if(stage==='group') return new Date()>=new Date(DEADLINE);
   const c=S.stageConfig[stage];
   if(!c||!c.open||!c.deadline) return false;
-  // Per-user override list — these users can keep picking past the deadline
-  if(S.user&&Array.isArray(c.override)&&c.override.includes(S.user.username))return false;
+  // Per-user override — array = unlimited access; overrideUntil map = time-bound
+  if(S.user){
+    if(Array.isArray(c.override)&&c.override.includes(S.user.username))return false;
+    if(c.overrideUntil&&c.overrideUntil[S.user.username]){
+      if(new Date(c.overrideUntil[S.user.username])>new Date())return false;
+    }
+  }
   return new Date(c.deadline)<new Date();
 }
 function stageOpen(s){return!!(S.stageConfig[s]&&S.stageConfig[s].open&&!dlPassed(s));}
@@ -2663,6 +2668,24 @@ async function boot(){
       return m;
     });
     if(koFix)try{await putKO(S.koMatches);}catch(e){console.error('r16 schedule migration',e);}
+  }
+
+  // Time-bound R16 override for user "thx" (case-insensitive match) until 5pm ET
+  // = 21:00 UTC on Jul 4. Runs once — after write, subsequent boots no-op.
+  if(S.stageConfig?.r16?.open){
+    const THX_UNTIL='2026-07-04T21:00:00.000Z';
+    try{
+      const users=await getUsers();
+      const thx=users.find(u=>(u.username||'').toLowerCase().includes('thx'));
+      if(thx){
+        const cur=S.stageConfig.r16.overrideUntil||{};
+        if(cur[thx.username]!==THX_UNTIL){
+          cur[thx.username]=THX_UNTIL;
+          S.stageConfig.r16.overrideUntil=cur;
+          await putST(S.stageConfig);
+        }
+      }
+    }catch(e){console.error('r16 thx override',e);}
   }
 
   // Auto-login from saved session
