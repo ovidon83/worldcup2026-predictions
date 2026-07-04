@@ -1157,8 +1157,8 @@ async function saveResult(id){
   const isKO=m&&m.stage&&m.stage!=='group';
   const isDraw=+ri.home===+ri.away;
   if(isKO&&isDraw&&!ri.adv){toast("90' draw — pick which team advanced",true);return;}
-  const r={home:+ri.home,away:+ri.away};
-  if(isKO&&isDraw)r.adv=ri.adv;
+  const r={home:+ri.home,away:+ri.away,status:'FINISHED',manual:true};
+  if(isKO&&isDraw){r.adv=ri.adv;r.et=true;}
   S.results[id]=r;
   await putRes(S.results);
   toast('Result saved ✓');
@@ -2029,7 +2029,10 @@ function buildPicksContent(openStages){
         <div style="font-size:0.78rem;margin-top:4px">Matches will appear once previous round results are confirmed.</div>
       </div>`;
     } else {
-      body=playable.map(m=>mcHTML(m,locked,stage)).join('');
+      // Sort by actual kickoff (date + time) so the list matches the fixture order
+      const toDT=m=>new Date('2026-'+(m.date||'Jun 11').replace('Jun ','06-').replace('Jul ','07-')+'T'+(m.time||'20:00')+':00');
+      const sorted=[...playable].sort((a,b)=>toDT(a)-toDT(b));
+      body=sorted.map(m=>mcHTML(m,locked,stage)).join('');
     }
   }
 
@@ -2436,7 +2439,10 @@ function attachAll(){
   q('#chat-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
   q('#chat-notif-popup')?.addEventListener('click',()=>{S.nav='chat';S.chatUnread=0;S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);document.title='World Cup 2026 · Predictions';render();requestAnimationFrame(()=>{const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;});});
   q('#chat-notif-close')?.addEventListener('click',e=>{e.stopPropagation();S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);render();});
-  q('#ko-notif-banner')?.addEventListener('click',()=>{S.nav='picks';S.pstage='r32';render();});
+  q('#ko-notif-banner')?.addEventListener('click',()=>{
+    const openKO=['r32','r16','qf','sf','final'].filter(s=>S.stageConfig[s]?.open&&!dlPassed(s));
+    S.nav='picks';S.pstage=openKO[0]||S.pstage;render();
+  });
   requestAnimationFrame(()=>{if(S.nav==='chat'){const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;}});
   q('#delete-account-btn')?.addEventListener('click',()=>{S.confirmDelete=true;render();});
   q('#delete-no-btn')?.addEventListener('click',()=>{S.confirmDelete=false;render();});
@@ -2473,9 +2479,15 @@ function attachAll(){
     const mid=+e.target.dataset.mid,side=e.target.dataset.side;
     if(!S.tempScores[mid])S.tempScores[mid]={home:'',away:'',...(S.userPreds[mid]||{})};
     S.tempScores[mid][side]=e.target.value;
-    // Re-render KO matches to show/hide draw warning
+    // Re-render KO matches to show/hide draw warning; preserve scroll so mobile
+    // doesn't jump to the top after every score entry
     const m=allM().find(x=>x.id===mid);
-    if(m&&m.stage&&m.stage!=='group')render();
+    if(m&&m.stage&&m.stage!=='group'){
+      const c=document.getElementById('content');
+      const y=c?c.scrollTop:0;
+      render();
+      requestAnimationFrame(()=>{const c2=document.getElementById('content');if(c2)c2.scrollTop=y;});
+    }
   }));
 
   // admin results
@@ -2597,8 +2609,9 @@ async function syncScoresFromAPI(){
       const a=FD_NAMES[m.awayTeam?.name]??m.awayTeam?.name;
       const id=FD_LOOKUP.get(`${h}|${a}`);
       if(!id)continue;
+      if(updated[id]?.manual)continue; // don't overwrite admin overrides
       if(!updated[id]||updated[id].home!==sc.home||updated[id].away!==sc.away){
-        updated[id]={home:sc.home,away:sc.away};changed=true;
+        updated[id]={...updated[id],home:sc.home,away:sc.away};changed=true;
       }
     }
     if(changed){
@@ -2620,6 +2633,15 @@ async function boot(){
   S.results=res||{};
   if(stages)S.stageConfig=stages;
   if(ko)S.koMatches=ko;
+
+  // R16 deadline: 1pm ET (17:00 UTC) on Jul 4 — kickoff of the first R16 match.
+  // Auto-unlock set it to the night before; move it forward here. Idempotent — a
+  // fixed value means every load after the first is a no-op.
+  const R16_DEADLINE='2026-07-04T17:00:00.000Z';
+  if(S.stageConfig?.r16?.open&&S.stageConfig.r16.deadline!==R16_DEADLINE){
+    S.stageConfig.r16.deadline=R16_DEADLINE;
+    try{await putST(S.stageConfig);}catch(e){console.error('r16 deadline migration',e);}
+  }
 
   // Auto-login from saved session
   try{

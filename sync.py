@@ -85,6 +85,16 @@ def save_results(results):
     with urllib.request.urlopen(req) as resp:
         print(f'Written {len(results)} results. HTTP {resp.status}')
 
+# Verified real-world scores for KO matches where football-data.org's free tier
+# is unreliable (usually ET / penalty shootouts). `manual: True` protects them
+# from future sync overwrites.
+MANUAL_OVERRIDES = {
+    # Australia 1-1 Egypt (AET) — Egypt won 4-2 on pens (Jul 3, R32)
+    '114': {'home': 1, 'away': 1, 'status': 'FINISHED', 'et': True, 'adv': 'a', 'manual': True},
+    # Argentina 3-2 Cape Verde (AET) — Argentina won in ET (Jul 3, R32)
+    '115': {'home': 3, 'away': 2, 'status': 'FINISHED', 'et': True, 'manual': True},
+}
+
 def main():
     matches  = fetch_matches()
     results  = load_results()
@@ -101,6 +111,10 @@ def main():
         if not mid:
             continue
         key = str(mid)
+
+        # Respect admin overrides — sync must never clobber manually-entered results
+        if results.get(key, {}).get('manual'):
+            continue
 
         if status == 'FINISHED':
             sc = (m.get('score') or {}).get('fullTime') or {}
@@ -122,6 +136,13 @@ def main():
             results[key] = entry
             changed = True
             print(f'  Updated match {key} ({h} vs {a}): {entry}')
+
+    # Apply verified overrides (source of truth for API-unreliable ET/pens matches)
+    for k, v in MANUAL_OVERRIDES.items():
+        if results.get(k) != v:
+            results[k] = v
+            changed = True
+            print(f'  MANUAL OVERRIDE applied for id={k}: {v}')
 
     if changed:
         save_results(results)

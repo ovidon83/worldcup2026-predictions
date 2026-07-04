@@ -128,8 +128,9 @@ Deno.serve(async () => {
     if (!id) continue
 
     const cur = results[id]
+    if ((cur as any)?.manual) continue // respect admin overrides
     if (!cur || cur.home !== score.home || cur.away !== score.away) {
-      results[id] = { home: score.home, away: score.away }
+      results[id] = { ...cur, home: score.home, away: score.away }
       changed = true
     }
     synced++

@@ -190,6 +190,22 @@ jobs:
               results[key] = entry
               changed = True
 
+          # --- MANUAL OVERRIDES (ground-truth from official sources) ---
+          # For KO matches with ET / penalty shootouts, football-data.org's free tier is
+          # unreliable (often reports 0-0 ET score, missing winner). Apply verified real-
+          # world scores here. `manual: true` protects them from future sync overwrites.
+          MANUAL_OVERRIDES = {
+            # id 114: Australia 1-1 Egypt (AET) — Egypt won 4-2 on penalties (Jul 3)
+            '114': {'home': 1, 'away': 1, 'status': 'FINISHED', 'et': True, 'adv': 'a', 'manual': True},
+            # id 115: Argentina 3-2 Cape Verde (AET) — Argentina won in ET (Jul 3)
+            '115': {'home': 3, 'away': 2, 'status': 'FINISHED', 'et': True, 'manual': True},
+          }
+          for k, v in MANUAL_OVERRIDES.items():
+            if results.get(k) != v:
+              results[k] = v
+              changed = True
+              print(f'  MANUAL OVERRIDE applied for id={k}: {v}')
+
           if not changed:
             print('No changes.')
           else:
