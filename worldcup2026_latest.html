@@ -2480,13 +2480,16 @@ function attachAll(){
     if(!S.tempScores[mid])S.tempScores[mid]={home:'',away:'',...(S.userPreds[mid]||{})};
     S.tempScores[mid][side]=e.target.value;
     // Re-render KO matches to show/hide draw warning; preserve scroll so mobile
-    // doesn't jump to the top after every score entry
+    // doesn't jump to the top after every score entry. The picks page scrolls
+    // inside .picks-body, not #content — snapshot every plausible container.
     const m=allM().find(x=>x.id===mid);
     if(m&&m.stage&&m.stage!=='group'){
-      const c=document.getElementById('content');
-      const y=c?c.scrollTop:0;
+      const sels=['.picks-body','#content'];
+      const ys=sels.map(s=>{const el=document.querySelector(s);return el?el.scrollTop:0;});
       render();
-      requestAnimationFrame(()=>{const c2=document.getElementById('content');if(c2)c2.scrollTop=y;});
+      requestAnimationFrame(()=>{
+        sels.forEach((s,i)=>{const el=document.querySelector(s);if(el&&ys[i])el.scrollTop=ys[i];});
+      });
     }
   }));
 
