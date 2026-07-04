@@ -208,4 +208,149 @@ jobs:
             )
             with urllib.request.urlopen(req3) as resp:
               print(f'Written {len(results)} results. Status: {resp.status}')
+
+          # ═══════════════════════════════════════════
+          # AUTO-UNLOCK R16 when all R32 games are FINISHED
+          # ═══════════════════════════════════════════
+
+          # Fetch current stageConfig
+          req_st = urllib.request.Request(
+            f"{SB_URL}/rest/v1/wc26_store?key=eq.wc26_s&select=value",
+            headers={'apikey': SB_KEY, 'Authorization': f'Bearer {SB_KEY}'}
+          )
+          with urllib.request.urlopen(req_st) as resp:
+            st_rows = json.loads(resp.read())
+          stage_cfg = st_rows[0]['value'] if st_rows else {}
+
+          r16_already_open = stage_cfg.get('r16', {}).get('open')
+          r32_matches = (ko_data or {}).get('r32', []) or []
+          r32_playable = [m for m in r32_matches if isinstance(m, dict) and m.get('resolved') is not False and m.get('homeN') not in (None, 'TBD')]
+          r32_all_done = len(r32_playable) == 16 and all(
+            results.get(str(m['id']), {}).get('status') == 'FINISHED' for m in r32_playable
+          )
+
+          if r32_all_done and not r16_already_open:
+            print('🔓 R32 complete — unlocking R16')
+
+            # Determine winner of each R32 match
+            r32_by_id = {m['id']: m for m in r32_playable}
+            def winner_of(mid):
+              m = r32_by_id.get(mid)
+              r = results.get(str(mid), {})
+              if not m or not r: return {'name':'TBD','flag':'🏳️'}
+              h, a = r['home'], r['away']
+              if h > a: return {'name': m['homeN'], 'flag': m['home']}
+              if a > h: return {'name': m['awayN'], 'flag': m['away']}
+              adv = r.get('adv')
+              if adv == 'h': return {'name': m['homeN'], 'flag': m['home']}
+              if adv == 'a': return {'name': m['awayN'], 'flag': m['away']}
+              return {'name':'TBD','flag':'🏳️'}
+
+            # R16 bracket (from KOT.r16 in the frontend)
+            R16_TEMPLATE = [
+              (201, 'W103', 'W105'),
+              (202, 'W101', 'W109'),
+              (203, 'W112', 'W111'),
+              (204, 'W108', 'W106'),
+              (205, 'W102', 'W113'),
+              (206, 'W104', 'W107'),
+              (207, 'W115', 'W114'),
+              (208, 'W110', 'W116'),
+            ]
+
+            # Try to look up R16 kickoff times from the API (matches within window)
+            def find_api_time(name_a, name_b):
+              for m in matches:
+                h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name']) if m['homeTeam']['name'] else None
+                a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name']) if m['awayTeam']['name'] else None
+                if h and a and {h, a} == {name_a, name_b}:
+                  return m.get('utcDate')
+              return None
+
+            EDT = timezone(timedelta(hours=-4))
+            MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+            # Fallback times if API doesn't have R16 yet (best-effort estimates)
+            FALLBACK_TIMES = {201:('Jul 4','16:00'),202:('Jul 4','20:00'),
+                              203:('Jul 6','16:00'),204:('Jul 6','20:00'),
+                              205:('Jul 5','16:00'),206:('Jul 5','20:00'),
+                              207:('Jul 7','16:00'),208:('Jul 7','20:00')}
+
+            r16_matches = []
+            earliest_dt = None
+            for mid, slotH, slotA in R16_TEMPLATE:
+              hw = winner_of(int(slotH[1:]))
+              aw = winner_of(int(slotA[1:]))
+              utc_str = find_api_time(hw['name'], aw['name'])
+              if utc_str:
+                dt_utc = datetime.fromisoformat(utc_str.replace('Z','+00:00'))
+                dt_et = dt_utc.astimezone(EDT)
+                date_str = f"{MONS[dt_et.month-1]} {dt_et.day}"
+                time_str = dt_et.strftime('%H:%M')
+              else:
+                date_str, time_str = FALLBACK_TIMES[mid]
+                # Reconstruct UTC dt from fallback ET for deadline calc
+                mon = MONS.index(date_str.split()[0]) + 1
+                day = int(date_str.split()[1])
+                hh, mm = [int(x) for x in time_str.split(':')]
+                dt_et = datetime(2026, mon, day, hh, mm, tzinfo=EDT)
+                dt_utc = dt_et.astimezone(timezone.utc)
+              if earliest_dt is None or dt_utc < earliest_dt:
+                earliest_dt = dt_utc
+              r16_matches.append({
+                'id': mid, 'stage': 'r16', 'round': 'Round of 16',
+                'date': date_str, 'time': time_str,
+                'slotHome': slotH, 'slotAway': slotA,
+                'homeN': hw['name'], 'awayN': aw['name'],
+                'home': hw['flag'], 'away': aw['flag'],
+              })
+
+            # Deadline: 1 hour before earliest R16 match
+            deadline = earliest_dt - timedelta(hours=1)
+            deadline_str = deadline.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+            # Update ko_data
+            ko_data['r16'] = r16_matches
+            body_k = json.dumps({'key':'wc26_k','value':ko_data}).encode()
+            req_k = urllib.request.Request(f"{SB_URL}/rest/v1/wc26_store", data=body_k,
+              headers={'apikey':SB_KEY,'Authorization':f'Bearer {SB_KEY}','Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+              method='POST')
+            with urllib.request.urlopen(req_k) as r:
+              print(f'  wc26_k updated (r16 populated). Status: {r.status}')
+
+            # Update stageConfig
+            stage_cfg['r16'] = {'open': True, 'deadline': deadline_str}
+            body_s = json.dumps({'key':'wc26_s','value':stage_cfg}).encode()
+            req_s = urllib.request.Request(f"{SB_URL}/rest/v1/wc26_store", data=body_s,
+              headers={'apikey':SB_KEY,'Authorization':f'Bearer {SB_KEY}','Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+              method='POST')
+            with urllib.request.urlopen(req_s) as r:
+              print(f'  wc26_s updated (r16 open, deadline={deadline_str}). Status: {r.status}')
+
+            # Post chat announcement
+            req_c = urllib.request.Request(
+              f"{SB_URL}/rest/v1/wc26_store?key=eq.wc26_chat&select=value",
+              headers={'apikey': SB_KEY, 'Authorization': f'Bearer {SB_KEY}'}
+            )
+            with urllib.request.urlopen(req_c) as resp:
+              c_rows = json.loads(resp.read())
+            chat = c_rows[0]['value'] if c_rows else []
+            deadline_display = deadline.astimezone(EDT).strftime('%b %d, %I:%M %p ET')
+            chat_msg = {
+              't': f'🔥 Round of 16 predictions are OPEN! First game is coming up. Deadline: {deadline_display}. Same rules as R32 — no draws allowed, exact 5 / winner+diff 3 / winner-only 2. Good luck!',
+              'u': 'ovidon83',
+              'ts': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.') + f'{datetime.utcnow().microsecond//1000:03d}Z'
+            }
+            chat.append(chat_msg)
+            body_ch = json.dumps({'key':'wc26_chat','value':chat}).encode()
+            req_ch = urllib.request.Request(f"{SB_URL}/rest/v1/wc26_store", data=body_ch,
+              headers={'apikey':SB_KEY,'Authorization':f'Bearer {SB_KEY}','Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+              method='POST')
+            with urllib.request.urlopen(req_ch) as r:
+              print(f'  Chat announcement posted. Status: {r.status}')
+          elif r16_already_open:
+            print('R16 already open — skip unlock')
+          else:
+            done_count = sum(1 for m in r32_playable if results.get(str(m['id']), {}).get('status') == 'FINISHED')
+            print(f'R32 not complete yet ({done_count}/{len(r32_playable)} done) — R16 unlock waits')
           EOF
