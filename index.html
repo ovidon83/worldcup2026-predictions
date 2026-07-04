@@ -585,14 +585,15 @@ const KOT={
     {id:114,stage:'r32',round:'Round of 32',date:'Jul 3',time:'21:00',slotHome:'Ru D',slotAway:'Ru G',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
   ],
   r16:[
-    {id:201,stage:'r16',round:'Round of 16',date:'Jul 4',time:'16:00',slotHome:'W103',slotAway:'W105',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
-    {id:202,stage:'r16',round:'Round of 16',date:'Jul 4',time:'20:00',slotHome:'W101',slotAway:'W109',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
-    {id:203,stage:'r16',round:'Round of 16',date:'Jul 6',time:'16:00',slotHome:'W112',slotAway:'W111',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
-    {id:204,stage:'r16',round:'Round of 16',date:'Jul 6',time:'20:00',slotHome:'W108',slotAway:'W106',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
-    {id:205,stage:'r16',round:'Round of 16',date:'Jul 5',time:'16:00',slotHome:'W102',slotAway:'W113',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
-    {id:206,stage:'r16',round:'Round of 16',date:'Jul 5',time:'20:00',slotHome:'W104',slotAway:'W107',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
-    {id:207,stage:'r16',round:'Round of 16',date:'Jul 7',time:'16:00',slotHome:'W115',slotAway:'W114',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
-    {id:208,stage:'r16',round:'Round of 16',date:'Jul 7',time:'20:00',slotHome:'W110',slotAway:'W116',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
+    // Times are US Eastern per official FIFA schedule (venue in comment)
+    {id:201,stage:'r16',round:'Round of 16',date:'Jul 4',time:'17:00',slotHome:'W103',slotAway:'W105',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // Philadelphia (Paraguay v France)
+    {id:202,stage:'r16',round:'Round of 16',date:'Jul 4',time:'13:00',slotHome:'W101',slotAway:'W109',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // Houston (Canada v Morocco)
+    {id:203,stage:'r16',round:'Round of 16',date:'Jul 6',time:'15:00',slotHome:'W112',slotAway:'W111',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // Arlington TX (Portugal v Spain)
+    {id:204,stage:'r16',round:'Round of 16',date:'Jul 6',time:'20:00',slotHome:'W108',slotAway:'W106',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // Seattle (USA v Belgium)
+    {id:205,stage:'r16',round:'Round of 16',date:'Jul 5',time:'16:00',slotHome:'W102',slotAway:'W113',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // East Rutherford (Brazil v Norway)
+    {id:206,stage:'r16',round:'Round of 16',date:'Jul 5',time:'20:00',slotHome:'W104',slotAway:'W107',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // Mexico City (Mexico v England)
+    {id:207,stage:'r16',round:'Round of 16',date:'Jul 7',time:'12:00',slotHome:'W115',slotAway:'W114',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // Atlanta (Argentina v Egypt)
+    {id:208,stage:'r16',round:'Round of 16',date:'Jul 7',time:'16:00',slotHome:'W110',slotAway:'W116',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'}, // Vancouver (Switzerland v Colombia/Ghana)
   ],
   qf:[
     {id:301,stage:'qf',round:'Quarter Final',date:'Jul 9', time:'16:00',slotHome:'W201',slotAway:'W202',homeN:'TBD',awayN:'TBD',home:'🏳️',away:'🏳️'},
@@ -2637,13 +2638,31 @@ async function boot(){
   if(stages)S.stageConfig=stages;
   if(ko)S.koMatches=ko;
 
-  // R16 deadline: 1pm ET (17:00 UTC) on Jul 4 — kickoff of the first R16 match.
-  // Auto-unlock set it to the night before; move it forward here. Idempotent — a
-  // fixed value means every load after the first is a no-op.
+  // R16 deadline: 1pm ET (17:00 UTC) on Jul 4 — kickoff of the first R16 match
+  // (Canada v Morocco). Auto-unlock set it to the night before; move it forward
+  // here. Idempotent — a fixed value means every load after the first is a no-op.
   const R16_DEADLINE='2026-07-04T17:00:00.000Z';
   if(S.stageConfig?.r16?.open&&S.stageConfig.r16.deadline!==R16_DEADLINE){
     S.stageConfig.r16.deadline=R16_DEADLINE;
     try{await putST(S.stageConfig);}catch(e){console.error('r16 deadline migration',e);}
+  }
+
+  // R16 schedule fix: auto-unlock captured stale placeholder dates/times from
+  // the KOT template. Rewrite them to match the official FIFA schedule (ET).
+  const R16_SCHEDULE={
+    201:{date:'Jul 4',time:'17:00'}, 202:{date:'Jul 4',time:'13:00'},
+    203:{date:'Jul 6',time:'15:00'}, 204:{date:'Jul 6',time:'20:00'},
+    205:{date:'Jul 5',time:'16:00'}, 206:{date:'Jul 5',time:'20:00'},
+    207:{date:'Jul 7',time:'12:00'}, 208:{date:'Jul 7',time:'16:00'},
+  };
+  if(Array.isArray(S.koMatches?.r16)&&S.koMatches.r16.length){
+    let koFix=false;
+    S.koMatches.r16=S.koMatches.r16.map(m=>{
+      const s=R16_SCHEDULE[m.id];
+      if(s&&(m.date!==s.date||m.time!==s.time)){koFix=true;return{...m,date:s.date,time:s.time};}
+      return m;
+    });
+    if(koFix)try{await putKO(S.koMatches);}catch(e){console.error('r16 schedule migration',e);}
   }
 
   // Auto-login from saved session
