@@ -2029,7 +2029,10 @@ function buildPicksContent(openStages){
         <div style="font-size:0.78rem;margin-top:4px">Matches will appear once previous round results are confirmed.</div>
       </div>`;
     } else {
-      body=playable.map(m=>mcHTML(m,locked,stage)).join('');
+      // Sort by actual kickoff (date + time) so the list matches the fixture order
+      const toDT=m=>new Date('2026-'+(m.date||'Jun 11').replace('Jun ','06-').replace('Jul ','07-')+'T'+(m.time||'20:00')+':00');
+      const sorted=[...playable].sort((a,b)=>toDT(a)-toDT(b));
+      body=sorted.map(m=>mcHTML(m,locked,stage)).join('');
     }
   }
 
@@ -2436,7 +2439,10 @@ function attachAll(){
   q('#chat-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
   q('#chat-notif-popup')?.addEventListener('click',()=>{S.nav='chat';S.chatUnread=0;S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);document.title='World Cup 2026 · Predictions';render();requestAnimationFrame(()=>{const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;});});
   q('#chat-notif-close')?.addEventListener('click',e=>{e.stopPropagation();S.chatNotif=null;if(S.chatNotifTimer)clearTimeout(S.chatNotifTimer);render();});
-  q('#ko-notif-banner')?.addEventListener('click',()=>{S.nav='picks';S.pstage='r32';render();});
+  q('#ko-notif-banner')?.addEventListener('click',()=>{
+    const openKO=['r32','r16','qf','sf','final'].filter(s=>S.stageConfig[s]?.open&&!dlPassed(s));
+    S.nav='picks';S.pstage=openKO[0]||S.pstage;render();
+  });
   requestAnimationFrame(()=>{if(S.nav==='chat'){const el=document.getElementById('chat-msgs');if(el)el.scrollTop=el.scrollHeight;}});
   q('#delete-account-btn')?.addEventListener('click',()=>{S.confirmDelete=true;render();});
   q('#delete-no-btn')?.addEventListener('click',()=>{S.confirmDelete=false;render();});
@@ -2473,9 +2479,15 @@ function attachAll(){
     const mid=+e.target.dataset.mid,side=e.target.dataset.side;
     if(!S.tempScores[mid])S.tempScores[mid]={home:'',away:'',...(S.userPreds[mid]||{})};
     S.tempScores[mid][side]=e.target.value;
-    // Re-render KO matches to show/hide draw warning
+    // Re-render KO matches to show/hide draw warning; preserve scroll so mobile
+    // doesn't jump to the top after every score entry
     const m=allM().find(x=>x.id===mid);
-    if(m&&m.stage&&m.stage!=='group')render();
+    if(m&&m.stage&&m.stage!=='group'){
+      const c=document.getElementById('content');
+      const y=c?c.scrollTop:0;
+      render();
+      requestAnimationFrame(()=>{const c2=document.getElementById('content');if(c2)c2.scrollTop=y;});
+    }
   }));
 
   // admin results
