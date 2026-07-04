@@ -2634,6 +2634,15 @@ async function boot(){
   if(stages)S.stageConfig=stages;
   if(ko)S.koMatches=ko;
 
+  // R16 deadline: 1pm ET (17:00 UTC) on Jul 4 — kickoff of the first R16 match.
+  // Auto-unlock set it to the night before; move it forward here. Idempotent — a
+  // fixed value means every load after the first is a no-op.
+  const R16_DEADLINE='2026-07-04T17:00:00.000Z';
+  if(S.stageConfig?.r16?.open&&S.stageConfig.r16.deadline!==R16_DEADLINE){
+    S.stageConfig.r16.deadline=R16_DEADLINE;
+    try{await putST(S.stageConfig);}catch(e){console.error('r16 deadline migration',e);}
+  }
+
   // Auto-login from saved session
   try{
     const saved=localStorage.getItem('wc26_auth');
