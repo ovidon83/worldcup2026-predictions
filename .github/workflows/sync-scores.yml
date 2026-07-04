@@ -334,8 +334,12 @@ jobs:
             with urllib.request.urlopen(req_k) as r:
               print(f'  wc26_k updated (r16 populated). Status: {r.status}')
 
-            # Update stageConfig
+            # Update stageConfig — preserve any pre-existing override list
+            prev_override = (stage_cfg.get('r16') or {}).get('override') or []
             stage_cfg['r16'] = {'open': True, 'deadline': deadline_str}
+            if prev_override:
+              stage_cfg['r16']['override'] = prev_override
+              print(f'  Preserved r16 override: {prev_override}')
             body_s = json.dumps({'key':'wc26_s','value':stage_cfg}).encode()
             req_s = urllib.request.Request(f"{SB_URL}/rest/v1/wc26_store", data=body_s,
               headers={'apikey':SB_KEY,'Authorization':f'Bearer {SB_KEY}','Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
