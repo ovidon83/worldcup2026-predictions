@@ -1157,8 +1157,8 @@ async function saveResult(id){
   const isKO=m&&m.stage&&m.stage!=='group';
   const isDraw=+ri.home===+ri.away;
   if(isKO&&isDraw&&!ri.adv){toast("90' draw — pick which team advanced",true);return;}
-  const r={home:+ri.home,away:+ri.away};
-  if(isKO&&isDraw)r.adv=ri.adv;
+  const r={home:+ri.home,away:+ri.away,status:'FINISHED',manual:true};
+  if(isKO&&isDraw){r.adv=ri.adv;r.et=true;}
   S.results[id]=r;
   await putRes(S.results);
   toast('Result saved ✓');
@@ -2597,8 +2597,9 @@ async function syncScoresFromAPI(){
       const a=FD_NAMES[m.awayTeam?.name]??m.awayTeam?.name;
       const id=FD_LOOKUP.get(`${h}|${a}`);
       if(!id)continue;
+      if(updated[id]?.manual)continue; // don't overwrite admin overrides
       if(!updated[id]||updated[id].home!==sc.home||updated[id].away!==sc.away){
-        updated[id]={home:sc.home,away:sc.away};changed=true;
+        updated[id]={...updated[id],home:sc.home,away:sc.away};changed=true;
       }
     }
     if(changed){
