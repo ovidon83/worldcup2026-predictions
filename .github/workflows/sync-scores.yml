@@ -225,11 +225,10 @@ jobs:
             with urllib.request.urlopen(req3) as resp:
               print(f'Written {len(results)} results. Status: {resp.status}')
 
-          # ═══════════════════════════════════════════
-          # AUTO-UNLOCK R16 when all R32 games are FINISHED
-          # ═══════════════════════════════════════════
+          # ═══════════════════════════════════════════════════════════════
+          # AUTO-UNLOCK next stage. Handles R32→R16, R16→QF, QF→SF, SF→Final.
+          # ═══════════════════════════════════════════════════════════════
 
-          # Fetch current stageConfig
           req_st = urllib.request.Request(
             f"{SB_URL}/rest/v1/wc26_store?key=eq.wc26_s&select=value",
             headers={'apikey': SB_KEY, 'Authorization': f'Bearer {SB_KEY}'}
@@ -238,74 +237,99 @@ jobs:
             st_rows = json.loads(resp.read())
           stage_cfg = st_rows[0]['value'] if st_rows else {}
 
-          r16_already_open = stage_cfg.get('r16', {}).get('open')
-          r32_matches = (ko_data or {}).get('r32', []) or []
-          r32_playable = [m for m in r32_matches if isinstance(m, dict) and m.get('resolved') is not False and m.get('homeN') not in (None, 'TBD')]
-          r32_all_done = len(r32_playable) == 16 and all(
-            results.get(str(m['id']), {}).get('status') == 'FINISHED' for m in r32_playable
-          )
+          EDT = timezone(timedelta(hours=-4))
+          MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-          if r32_all_done and not r16_already_open:
-            print('🔓 R32 complete — unlocking R16')
+          def find_api_time(name_a, name_b):
+            for m in matches:
+              h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name']) if m['homeTeam']['name'] else None
+              a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name']) if m['awayTeam']['name'] else None
+              if h and a and {h, a} == {name_a, name_b}:
+                return m.get('utcDate')
+            return None
 
-            # Determine winner of each R32 match
-            r32_by_id = {m['id']: m for m in r32_playable}
-            def winner_of(mid):
-              m = r32_by_id.get(mid)
-              r = results.get(str(mid), {})
-              if not m or not r: return {'name':'TBD','flag':'🏳️'}
-              h, a = r['home'], r['away']
-              if h > a: return {'name': m['homeN'], 'flag': m['home']}
-              if a > h: return {'name': m['awayN'], 'flag': m['away']}
-              adv = r.get('adv')
-              if adv == 'h': return {'name': m['homeN'], 'flag': m['home']}
-              if adv == 'a': return {'name': m['awayN'], 'flag': m['away']}
+          STAGE_UNLOCKS = [
+            {'from':'r32','to':'r16','count':16,'label':'Round of 16','icon':'🔥',
+             'template':[(201,'W103','W105'),(202,'W101','W109'),(203,'W112','W111'),
+                         (204,'W108','W106'),(205,'W102','W113'),(206,'W104','W107'),
+                         (207,'W115','W114'),(208,'W110','W116')],
+             'fallback':{201:('Jul 4','16:00'),202:('Jul 4','20:00'),
+                         203:('Jul 6','16:00'),204:('Jul 6','20:00'),
+                         205:('Jul 5','16:00'),206:('Jul 5','20:00'),
+                         207:('Jul 7','16:00'),208:('Jul 7','20:00')}},
+            {'from':'r16','to':'qf','count':8,'label':'Quarter Finals','icon':'💥',
+             'template':[(301,'W201','W202'),(302,'W203','W204'),
+                         (303,'W205','W206'),(304,'W207','W208')],
+             'fallback':{301:('Jul 9','15:00'),302:('Jul 10','15:00'),
+                         303:('Jul 11','15:00'),304:('Jul 11','19:00')}},
+            {'from':'qf','to':'sf','count':4,'label':'Semi Finals','icon':'⭐',
+             'template':[(401,'W301','W302'),(402,'W303','W304')],
+             'fallback':{401:('Jul 14','20:00'),402:('Jul 15','20:00')}},
+            {'from':'sf','to':'final','count':2,'label':'Final','icon':'🏆',
+             'template':[(501,'L401','L402'),(502,'W401','W402')],
+             'fallback':{501:('Jul 18','15:00'),502:('Jul 19','15:00')}},
+          ]
+
+          # Index every known KO match by id for winner/loser lookup
+          all_ko_matches = {}
+          for stage_ms in (ko_data or {}).values():
+            if not isinstance(stage_ms, list): continue
+            for m in stage_ms:
+              if isinstance(m, dict) and m.get('id'):
+                all_ko_matches[m['id']] = m
+
+          def resolve_slot(slot):
+            """slot='W201' or 'L401' → {name, flag}"""
+            prefix = slot[0]
+            try:
+              mid = int(slot[1:])
+            except ValueError:
               return {'name':'TBD','flag':'🏳️'}
+            m = all_ko_matches.get(mid)
+            r = results.get(str(mid), {})
+            if not m or not r or r.get('status') != 'FINISHED':
+              return {'name':'TBD','flag':'🏳️'}
+            h, a = r['home'], r['away']
+            if h != a:
+              winner_side = 'h' if h > a else 'a'
+            else:
+              adv = r.get('adv')
+              if adv not in ('h','a'):
+                return {'name':'TBD','flag':'🏳️'}
+              winner_side = adv
+            loser_side = 'a' if winner_side == 'h' else 'h'
+            side = winner_side if prefix == 'W' else loser_side
+            if side == 'h':
+              return {'name': m.get('homeN','TBD'), 'flag': m.get('home','🏳️')}
+            return {'name': m.get('awayN','TBD'), 'flag': m.get('away','🏳️')}
 
-            # R16 bracket (from KOT.r16 in the frontend)
-            R16_TEMPLATE = [
-              (201, 'W103', 'W105'),
-              (202, 'W101', 'W109'),
-              (203, 'W112', 'W111'),
-              (204, 'W108', 'W106'),
-              (205, 'W102', 'W113'),
-              (206, 'W104', 'W107'),
-              (207, 'W115', 'W114'),
-              (208, 'W110', 'W116'),
-            ]
+          for cfg in STAGE_UNLOCKS:
+            frm, to = cfg['from'], cfg['to']
+            if stage_cfg.get(to, {}).get('open'):
+              print(f'{to} already open — skip')
+              continue
+            from_matches = (ko_data or {}).get(frm, []) or []
+            from_playable = [m for m in from_matches if isinstance(m, dict) and m.get('resolved') is not False and m.get('homeN') not in (None, 'TBD')]
+            from_done = sum(1 for m in from_playable if results.get(str(m['id']), {}).get('status') == 'FINISHED')
+            if len(from_playable) != cfg['count'] or from_done != cfg['count']:
+              print(f'{frm} not complete ({from_done}/{cfg["count"]} done) — {to} unlock waits')
+              break
 
-            # Try to look up R16 kickoff times from the API (matches within window)
-            def find_api_time(name_a, name_b):
-              for m in matches:
-                h = NAMES.get(m['homeTeam']['name'], m['homeTeam']['name']) if m['homeTeam']['name'] else None
-                a = NAMES.get(m['awayTeam']['name'], m['awayTeam']['name']) if m['awayTeam']['name'] else None
-                if h and a and {h, a} == {name_a, name_b}:
-                  return m.get('utcDate')
-              return None
+            print(f'🔓 {frm} complete — unlocking {to}')
 
-            EDT = timezone(timedelta(hours=-4))
-            MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
-            # Fallback times if API doesn't have R16 yet (best-effort estimates)
-            FALLBACK_TIMES = {201:('Jul 4','16:00'),202:('Jul 4','20:00'),
-                              203:('Jul 6','16:00'),204:('Jul 6','20:00'),
-                              205:('Jul 5','16:00'),206:('Jul 5','20:00'),
-                              207:('Jul 7','16:00'),208:('Jul 7','20:00')}
-
-            r16_matches = []
+            new_matches = []
             earliest_dt = None
-            for mid, slotH, slotA in R16_TEMPLATE:
-              hw = winner_of(int(slotH[1:]))
-              aw = winner_of(int(slotA[1:]))
-              utc_str = find_api_time(hw['name'], aw['name'])
+            for mid, slotH, slotA in cfg['template']:
+              hw = resolve_slot(slotH)
+              aw = resolve_slot(slotA)
+              utc_str = find_api_time(hw['name'], aw['name']) if hw['name'] != 'TBD' and aw['name'] != 'TBD' else None
               if utc_str:
                 dt_utc = datetime.fromisoformat(utc_str.replace('Z','+00:00'))
                 dt_et = dt_utc.astimezone(EDT)
                 date_str = f"{MONS[dt_et.month-1]} {dt_et.day}"
                 time_str = dt_et.strftime('%H:%M')
               else:
-                date_str, time_str = FALLBACK_TIMES[mid]
-                # Reconstruct UTC dt from fallback ET for deadline calc
+                date_str, time_str = cfg['fallback'][mid]
                 mon = MONS.index(date_str.split()[0]) + 1
                 day = int(date_str.split()[1])
                 hh, mm = [int(x) for x in time_str.split(':')]
@@ -313,41 +337,41 @@ jobs:
                 dt_utc = dt_et.astimezone(timezone.utc)
               if earliest_dt is None or dt_utc < earliest_dt:
                 earliest_dt = dt_utc
-              r16_matches.append({
-                'id': mid, 'stage': 'r16', 'round': 'Round of 16',
+              new_matches.append({
+                'id': mid, 'stage': to, 'round': cfg['label'],
                 'date': date_str, 'time': time_str,
                 'slotHome': slotH, 'slotAway': slotA,
                 'homeN': hw['name'], 'awayN': aw['name'],
                 'home': hw['flag'], 'away': aw['flag'],
               })
 
-            # Deadline: 1 hour before earliest R16 match
             deadline = earliest_dt - timedelta(hours=1)
             deadline_str = deadline.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
-            # Update ko_data
-            ko_data['r16'] = r16_matches
+            ko_data[to] = new_matches
             body_k = json.dumps({'key':'wc26_k','value':ko_data}).encode()
             req_k = urllib.request.Request(f"{SB_URL}/rest/v1/wc26_store", data=body_k,
               headers={'apikey':SB_KEY,'Authorization':f'Bearer {SB_KEY}','Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
               method='POST')
             with urllib.request.urlopen(req_k) as r:
-              print(f'  wc26_k updated (r16 populated). Status: {r.status}')
+              print(f'  wc26_k updated ({to} populated). Status: {r.status}')
 
-            # Update stageConfig — preserve any pre-existing override list
-            prev_override = (stage_cfg.get('r16') or {}).get('override') or []
-            stage_cfg['r16'] = {'open': True, 'deadline': deadline_str}
+            # Add new matches to lookup so chained unlocks in the same run can resolve
+            for m in new_matches:
+              all_ko_matches[m['id']] = m
+
+            prev_override = (stage_cfg.get(to) or {}).get('override') or []
+            stage_cfg[to] = {'open': True, 'deadline': deadline_str}
             if prev_override:
-              stage_cfg['r16']['override'] = prev_override
-              print(f'  Preserved r16 override: {prev_override}')
+              stage_cfg[to]['override'] = prev_override
+              print(f'  Preserved {to} override: {prev_override}')
             body_s = json.dumps({'key':'wc26_s','value':stage_cfg}).encode()
             req_s = urllib.request.Request(f"{SB_URL}/rest/v1/wc26_store", data=body_s,
               headers={'apikey':SB_KEY,'Authorization':f'Bearer {SB_KEY}','Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
               method='POST')
             with urllib.request.urlopen(req_s) as r:
-              print(f'  wc26_s updated (r16 open, deadline={deadline_str}). Status: {r.status}')
+              print(f'  wc26_s updated ({to} open, deadline={deadline_str}). Status: {r.status}')
 
-            # Post chat announcement
             req_c = urllib.request.Request(
               f"{SB_URL}/rest/v1/wc26_store?key=eq.wc26_chat&select=value",
               headers={'apikey': SB_KEY, 'Authorization': f'Bearer {SB_KEY}'}
@@ -357,7 +381,7 @@ jobs:
             chat = c_rows[0]['value'] if c_rows else []
             deadline_display = deadline.astimezone(EDT).strftime('%b %d, %I:%M %p ET')
             chat_msg = {
-              't': f'🔥 Round of 16 predictions are OPEN! First game is coming up. Deadline: {deadline_display}. Same rules as R32 — no draws allowed, exact 5 / winner+diff 3 / winner-only 2. Good luck!',
+              't': f'{cfg["icon"]} {cfg["label"]} predictions are OPEN! Deadline: {deadline_display}. No draws — pick a winner. Scoring: exact 5 / winner+diff 3 / winner-only 2. Good luck!',
               'u': 'ovidon83',
               'ts': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.') + f'{datetime.utcnow().microsecond//1000:03d}Z'
             }
@@ -368,9 +392,4 @@ jobs:
               method='POST')
             with urllib.request.urlopen(req_ch) as r:
               print(f'  Chat announcement posted. Status: {r.status}')
-          elif r16_already_open:
-            print('R16 already open — skip unlock')
-          else:
-            done_count = sum(1 for m in r32_playable if results.get(str(m['id']), {}).get('status') == 'FINISHED')
-            print(f'R32 not complete yet ({done_count}/{len(r32_playable)} done) — R16 unlock waits')
           EOF
