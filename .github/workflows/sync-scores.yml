@@ -107,6 +107,49 @@ jobs:
             rows = json.loads(resp.read())
           results = rows[0]['value'] if rows else {}
 
+          # ESPN scoreboard fallback for ET/pens matches (football-data free tier is unreliable here).
+          # Cache one response per date to avoid hammering the endpoint.
+          _espn_cache = {}
+          ESPN_NAMES = {
+            'United States':'USA', 'Bosnia and Herzegovina':'Bosnia',
+            "Côte d'Ivoire":'Ivory Coast', 'Turkey':'Türkiye',
+            'Congo DR':'DR Congo',
+          }
+          def espn_score(date_str_utc, home_name, away_name):
+            """date_str_utc = 'YYYY-MM-DD'. Returns (h, a, status_detail) or None."""
+            ymd = date_str_utc.replace('-','')
+            if ymd not in _espn_cache:
+              try:
+                req = urllib.request.Request(
+                  f"https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates={ymd}",
+                  headers={'User-Agent':'Mozilla/5.0'}
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                  _espn_cache[ymd] = json.loads(r.read()).get('events', [])
+              except Exception as e:
+                print(f'  ESPN fetch failed for {ymd}: {e}')
+                _espn_cache[ymd] = []
+            for e in _espn_cache[ymd]:
+              comp = (e.get('competitions') or [{}])[0]
+              teams = comp.get('competitors', [])
+              h = next((t for t in teams if t.get('homeAway')=='home'), {})
+              a = next((t for t in teams if t.get('homeAway')=='away'), {})
+              h_raw = h.get('team',{}).get('displayName','') or ''
+              a_raw = a.get('team',{}).get('displayName','') or ''
+              h_name = ESPN_NAMES.get(h_raw, h_raw)
+              a_name = ESPN_NAMES.get(a_raw, a_raw)
+              if {h_name, a_name} == {home_name, away_name}:
+                try:
+                  hs, as_ = int(h.get('score','0') or 0), int(a.get('score','0') or 0)
+                except Exception:
+                  return None
+                status = (comp.get('status') or {}).get('type', {}).get('detail','')
+                # If our home/away is flipped vs ESPN's, swap scores
+                if h_name != home_name:
+                  hs, as_ = as_, hs
+                return (hs, as_, status)
+            return None
+
           # --- apply updates ---
           print(f'API returned {len(matches)} matches in window. KO_LOOKUP has {len(KO_LOOKUP)} entries.')
           changed = False
@@ -152,6 +195,30 @@ jobs:
                 continue
               if swap:
                 sc_h, sc_a = sc_a, sc_h
+              # For ET/pens: verify score against ESPN JSON (football-data free tier is buggy here)
+              if duration in ('EXTRA_TIME','PENALTY_SHOOTOUT'):
+                utc_date = (m.get('utcDate') or '')[:10]
+                # Use OUR canonical team names for lookup (respect swap for KO lookup ordering)
+                if mid in KO_LOOKUP.values() or True:
+                  # need homeN/awayN in OUR ordering; use ko_data
+                  our_match = None
+                  for stg in (ko_data or {}).values():
+                    if not isinstance(stg, list): continue
+                    for km in stg:
+                      if isinstance(km, dict) and km.get('id') == mid:
+                        our_match = km; break
+                    if our_match: break
+                  if our_match:
+                    espn = espn_score(utc_date, our_match['homeN'], our_match['awayN'])
+                    if espn:
+                      espn_h, espn_a, espn_status = espn
+                      if (espn_h, espn_a) != (sc_h, sc_a):
+                        print(f'    !! ET/pens score corrected via ESPN: API said {sc_h}-{sc_a}, ESPN says {espn_h}-{espn_a} ({espn_status})')
+                        sc_h, sc_a = espn_h, espn_a
+                      else:
+                        print(f'    ESPN confirms {sc_h}-{sc_a} ({espn_status})')
+                    else:
+                      print(f'    ESPN lookup missed — keeping API score {sc_h}-{sc_a}')
               entry = {'home': sc_h, 'away': sc_a, 'status': 'FINISHED'}
               # Mark ET-or-pens matches so UI can show AET/PENS badge
               if duration in ('EXTRA_TIME','PENALTY_SHOOTOUT'):
