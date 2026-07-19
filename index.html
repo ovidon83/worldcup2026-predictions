@@ -780,15 +780,20 @@ async function buildLB(){
       }
     });
     const advBonus=advDone?calcAdvancementBonus(up):0;
-    // Champion bonus: +25 pts if tournament finished and their pick won
+    // Champion bonus: +25 pts if final is FINISHED and their pick won
     const finalResult=S.results[502];
     let champBonus=0;
-    if(finalResult&&up._champ){
+    if(finalResult&&finalResult.status==='FINISHED'&&up._champ){
       const champPick=up._champ;
       const finalM=allM().find(m=>m.id===502);
       if(finalM){
-        const winner=finalResult.home>finalResult.away?finalM.homeN:finalM.awayN;
-        if(champPick===winner)champBonus=25;
+        // Winner: higher score wins; if draw (pens), use adv field
+        let winner=null;
+        if(finalResult.home>finalResult.away)winner=finalM.homeN;
+        else if(finalResult.away>finalResult.home)winner=finalM.awayN;
+        else if(finalResult.adv==='h')winner=finalM.homeN;
+        else if(finalResult.adv==='a')winner=finalM.awayN;
+        if(winner&&champPick===winner)champBonus=25;
       }
     }
     const total=scorePts+advBonus+champBonus;
