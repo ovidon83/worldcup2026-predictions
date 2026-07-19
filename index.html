@@ -440,6 +440,11 @@ body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(-
 /* ── Live pulse ── */
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red2);animation:pulse 1.4s ease-in-out infinite;flex-shrink:0}
+/* ── Champion confetti ── */
+@keyframes confetti-fall{0%{top:-15%;opacity:1;transform:rotate(0)}100%{top:115%;opacity:.4;transform:rotate(720deg)}}
+.confetti-piece{position:absolute;width:8px;height:12px;top:-15%;left:var(--x);background:hsl(var(--h),90%,60%);border-radius:2px;animation:confetti-fall var(--d) linear infinite;animation-delay:var(--dl)}
+@keyframes trophy-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.trophy-bounce{display:inline-block;animation:trophy-bounce 1.6s ease-in-out infinite}
 /* ── Deadline strip in banner ── */
 .dl-strip{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:var(--r2);padding:6px 11px}
 .dl-strip-lbl{font-size:.52rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.5);white-space:nowrap}
@@ -1496,9 +1501,39 @@ function buildKONotif(){
     <span style="font-size:0.8rem;font-weight:700;color:var(--gold);white-space:nowrap">Make picks →</span>
   </div>`;
 }
+function buildChampBanner(){
+  const r=S.results[502];
+  if(!r||r.status!=='FINISHED')return'';
+  const finalM=allM().find(m=>m.id===502);
+  if(!finalM)return'';
+  let winnerName=null,winnerFlag='🏆';
+  if(r.home>r.away){winnerName=finalM.homeN;winnerFlag=finalM.home;}
+  else if(r.away>r.home){winnerName=finalM.awayN;winnerFlag=finalM.away;}
+  else if(r.adv==='h'){winnerName=finalM.homeN;winnerFlag=finalM.home;}
+  else if(r.adv==='a'){winnerName=finalM.awayN;winnerFlag=finalM.away;}
+  if(!winnerName)return'';
+  const iCalled=S.user&&S.championPick&&S.championPick===winnerName;
+  const confetti=Array(60).fill(0).map((_,i)=>{
+    const x=Math.floor(Math.random()*100);
+    const d=(2+Math.random()*3).toFixed(2);
+    const dl=(-Math.random()*4).toFixed(2);
+    const h=Math.floor(Math.random()*360);
+    return `<div class="confetti-piece" style="--x:${x}%;--d:${d}s;--dl:${dl}s;--h:${h}"></div>`;
+  }).join('');
+  return `<div style="position:relative;background:linear-gradient(135deg,#c9973a,#a8792d);border:2px solid var(--gold);border-radius:var(--r);padding:24px 16px;margin:0 0 14px;text-align:center;overflow:hidden;color:#fff;box-shadow:0 4px 20px rgba(201,151,58,.4)">
+    <div style="position:absolute;inset:0;pointer-events:none;overflow:hidden">${confetti}</div>
+    <div style="position:relative">
+      <div style="font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.75);margin-bottom:6px">🏆 World Cup 2026 Champion 🏆</div>
+      <div style="font-size:2.4rem;line-height:1;margin:4px 0"><span class="trophy-bounce">${winnerFlag}</span></div>
+      <div style="font-family:'Oswald',sans-serif;font-size:1.7rem;font-weight:700;letter-spacing:2px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,0.3)">${winnerName}</div>
+      ${iCalled?`<div style="margin-top:12px;background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:7px 16px;display:inline-block;font-size:0.82rem;font-weight:700">✨ You called it! +25 pts ✨</div>`:''}
+    </div>
+  </div>`;
+}
 function buildHomeContent(){
-  const notif=S.user?buildKONotif():'';
-  return notif+buildPublicTabs();
+  const champ=buildChampBanner();
+  const notif=S.user&&!champ?buildKONotif():'';
+  return champ+notif+buildPublicTabs();
 }
 
 function buildMatchDayGames(games){
